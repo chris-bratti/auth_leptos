@@ -19,6 +19,7 @@ use serde::Deserialize;
 #[cfg(feature = "ssr")]
 use serde::Serialize;
 
+use crate::db::db_helper::create_user;
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::does_user_exist;
 #[cfg(feature = "ssr")]
@@ -163,14 +164,15 @@ pub async fn signup(
     };
 
     // Creates DB user
-    create_user(user_info);
+    let user =
+        create_user(user_info).map_err(|_err| ServerFnError::new("Unable to create user"))?;
 
     // Saving user to current session to stay logged in
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
         return Err(ServerFnError::new("No httpRequest stuff"));
     };
-    println!("Saving user to session: {username}");
-    Identity::login(&req.extensions(), username.into()).unwrap();
+    println!("Saving user to session: {}", user.username);
+    Identity::login(&req.extensions(), user.username.into()).unwrap();
 
     leptos_actix::redirect("/user");
 

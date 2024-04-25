@@ -1,8 +1,10 @@
 use std::fmt;
 
-use crate::User;
+use crate::{auth::UserInfo, User};
 
-use super::users_db::{get_user_from_username, update_db_username};
+use super::users_db::{
+    create_db_user, get_user_from_username, update_db_password, update_db_username,
+};
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
     let db_user =
@@ -19,6 +21,29 @@ pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> 
         Some(user) => Ok(user.pass_hash),
         None => Err(DBError::NotFound(username.clone())),
     }
+}
+
+pub fn update_user_password(
+    username: &String,
+    old_pass_hash: &String,
+    new_pass_hash: &String,
+) -> Result<(), DBError> {
+    update_db_password(username, old_pass_hash, new_pass_hash)
+        .map_err(|err| DBError::InternalServerError(err))?;
+
+    Ok(())
+}
+
+pub fn create_user(user_info: UserInfo) -> Result<User, DBError> {
+    let db_user = create_db_user(user_info).map_err(|err| DBError::InternalServerError(err))?;
+
+    let user = User {
+        first_name: db_user.first_name,
+        last_name: db_user.last_name,
+        username: db_user.username,
+    };
+
+    Ok(user)
 }
 
 pub fn find_user_by_username(username: &String) -> Result<Option<User>, DBError> {
