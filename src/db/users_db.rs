@@ -103,7 +103,6 @@ pub fn delete_db_user(uname: &String) -> Result<usize, diesel::result::Error> {
 
 #[cfg(test)]
 pub mod test_db {
-    use std::fs::read;
 
     use crate::{
         auth::UserInfo,

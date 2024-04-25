@@ -3,7 +3,7 @@ use std::fmt;
 use crate::{auth::UserInfo, User};
 
 use super::users_db::{
-    create_db_user, get_user_from_username, update_db_password, update_db_username,
+    create_db_user, delete_db_user, get_user_from_username, update_db_password, update_db_username,
 };
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
@@ -75,6 +75,20 @@ pub fn update_username(username: &String, new_username: &String) -> Result<(), D
     }
 }
 
+pub fn delete_user(username: &String) -> Result<(), DBError> {
+    let records_deleted =
+        delete_db_user(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    if records_deleted > 1 {
+        panic!(
+            "Multiple records deleted!! 1 should have been deleted, actual: {}",
+            records_deleted
+        );
+    }
+
+    Ok(())
+}
+
 pub enum DBError {
     NotFound(String),
     InternalServerError(diesel::result::Error),
@@ -105,5 +119,74 @@ impl fmt::Debug for DBError {
                 write!(f, "Diesel error: {}", diesel_error)
             }
         }
+    }
+}
+
+#[cfg(test)]
+pub mod test_db_helpers {
+    use crate::{
+        auth::UserInfo,
+        db::db_helper::{
+            delete_user, does_user_exist, find_user_by_username, get_pass_hash_for_username,
+        },
+    };
+
+    use super::create_user;
+
+    #[test]
+    fn test_user_process() {
+        let user_info = UserInfo {
+            first_name: String::from("foo"),
+            last_name: String::from("bar"),
+            username: String::from("foobar2"),
+            pass_hash: String::from("supersecretpassword"),
+        };
+
+        // Create
+
+        let created_user = create_user(user_info.clone()).expect("Error getting user");
+
+        assert_eq!(created_user.first_name, user_info.first_name);
+        assert_eq!(created_user.last_name, user_info.last_name);
+        assert_eq!(created_user.username, user_info.username);
+
+        // Test if user exists
+        let user_exists =
+            does_user_exist(&created_user.username).expect("Error searching for user");
+
+        assert!(user_exists);
+
+        // Verify password hash is retrieved correctly
+        let pass_hash = get_pass_hash_for_username(&created_user.username)
+            .expect("Error getting password hash");
+
+        assert_eq!(pass_hash, user_info.pass_hash);
+
+        // Search for user by username
+        let user_response =
+            find_user_by_username(&user_info.username).expect("Error searching for user");
+
+        assert!(user_response.is_some());
+
+        let user_response = user_response.unwrap();
+
+        assert_eq!(user_response.first_name, user_info.first_name);
+        assert_eq!(user_response.last_name, user_info.last_name);
+        assert_eq!(user_response.username, user_info.username);
+
+        // Delete user
+        delete_user(&user_info.username).expect("Error deleting records");
+
+        // Verify the user does not exist
+        let user_exists =
+            does_user_exist(&created_user.username).expect("Error searching for user");
+
+        assert!(!user_exists);
+
+        // Search for user by username
+        let user_response =
+            find_user_by_username(&user_info.username).expect("Error searching for user");
+
+        assert!(user_response.is_none());
     }
 }
