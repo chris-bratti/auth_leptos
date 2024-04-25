@@ -64,7 +64,7 @@ pub async fn get_session() -> Result<String, ServerFnError> {
 #[server(Login, "/api")]
 async fn login(username: String, password: String) -> Result<(), ServerFnError> {
     println!("Attempting to log in user {username}");
-    let pass_result = crate::db::db::get_pass_hash_for_username(username.clone());
+    let pass_result = crate::db::users_db::get_pass_hash_for_username(username.clone());
 
     let verified_result = verify_password(&password, &pass_result?);
 
@@ -114,7 +114,7 @@ pub async fn signup(
     password: String,
     confirm_password: String,
 ) -> Result<(), ServerFnError> {
-    use crate::db::db::*;
+    use crate::db::users_db::*;
 
     let mut conn = establish_connection();
 
