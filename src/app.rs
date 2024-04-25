@@ -54,6 +54,7 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn SignUp() -> impl IntoView {
     let signup = create_server_action::<SignUp>();
+    let signup_value = signup.value();
 
     let (passwords_match, set_passwords_match) = create_signal(true);
 
@@ -110,6 +111,21 @@ fn SignUp() -> impl IntoView {
                         }
                     }}
 
+                    {move || {
+                        match signup_value.get() {
+                            Some(response) => {
+                                match response {
+                                    Ok(_) => view! {}.into_view(),
+                                    Err(server_err) => {
+                                        view! { <p>{format!("{}", server_err.to_string())}</p> }
+                                            .into_view()
+                                    }
+                                }
+                            }
+                            None => view! {}.into_view(),
+                        }
+                    }}
+
                 </div>
                 <input class="btn btn-primary" type="submit" value="Login"/>
             </ActionForm>
@@ -147,7 +163,7 @@ fn Auth() -> impl IntoView {
                         match response {
                             Ok(_) => view! {}.into_view(),
                             Err(server_err) => {
-                                view! { <p>{format!("{server_err}")}</p> }.into_view()
+                                view! { <p>{format!("{}", server_err.to_string())}</p> }.into_view()
                             }
                         }
                     }
@@ -164,28 +180,35 @@ fn Auth() -> impl IntoView {
 
 #[component]
 fn UserPage() -> impl IntoView {
-    let user = create_resource(|| (), |_| async move { get_user().await });
-    let loading = user.loading();
+    let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
+    let loading = user_result.loading();
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
+
             {{
                 move || {
                     if loading() {
                         view! { <p>Loading...</p> }.into_view()
                     } else {
-                        match user.get() {
+                        let current_user = match user_result.get() {
+                            Some(user_result) => {
+                                match user_result {
+                                    Ok(user) => Some(user),
+                                    Err(_err) => None,
+                                }
+                            }
+                            None => None,
+                        };
+                        match current_user {
                             None => {
                                 view! { <NotLoggedIn/> }
                             }
-                            Some(data) => {
+                            Some(user) => {
                                 {
-                                    match data {
-                                        Ok(user_name) => {
-                                            view! { <h1>Welcome {user_name} !</h1> }.into_view()
-                                        }
-                                        Err(_) => {
-                                            view! { <NotLoggedIn/> }
-                                        }
+                                    view! {
+                                        <h1>
+                                            {format!("Welcome {} {}", user.first_name, user.last_name)}
+                                        </h1>
                                     }
                                 }
                                     .into_view()
@@ -194,7 +217,8 @@ fn UserPage() -> impl IntoView {
                     }
                 }
             }}
-            </div>
+
+        </div>
     }
 }
 
@@ -202,9 +226,22 @@ fn UserPage() -> impl IntoView {
 fn NotLoggedIn() -> impl IntoView {
     view! {
         <h1>"You need to be logged in to view this page"</h1>
-        <A class="btn btn-primary" href="/">
-            "Home"
-        </A>
+        <div>
+            <A class="btn btn-primary" href="/">
+                "Home"
+            </A>
+        </div>
+
+        <div>
+            <A class="btn btn-primary" href="/login">
+                "Login"
+            </A>
+        </div>
+        <div>
+            <A class="btn btn-primary" href="/signup">
+                "Signup"
+            </A>
+        </div>
     }
 }
 

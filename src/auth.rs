@@ -19,6 +19,11 @@ use serde::Deserialize;
 #[cfg(feature = "ssr")]
 use serde::Serialize;
 
+#[cfg(feature = "ssr")]
+use crate::db::db_helper::does_user_exist;
+#[cfg(feature = "ssr")]
+use crate::db::db_helper::find_user_by_username;
+
 cfg_if! {
     if #[cfg(feature = "ssr")] {
 fn hash_password(password: String) -> Result<String, argon2::password_hash::Error> {
@@ -45,6 +50,15 @@ fn verify_password(
     }
 }
 
+#[cfg(feature = "ssr")]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UserInfo {
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub pass_hash: String,
+}
+
 #[server]
 pub async fn get_session() -> Result<String, ServerFnError> {
     let session: Session = extract().await?;
@@ -63,8 +77,10 @@ pub async fn get_session() -> Result<String, ServerFnError> {
 
 #[server(Login, "/api")]
 async fn login(username: String, password: String) -> Result<(), ServerFnError> {
+    let username: String = username.trim().to_lowercase();
     println!("Attempting to log in user {username}");
-    let pass_result = crate::db::users_db::get_pass_hash_for_username(username.clone());
+    let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
+        .map_err(|_err| ServerFnError::new("Error getting user"));
 
     let verified_result = verify_password(&password, &pass_result?);
 
@@ -85,7 +101,7 @@ async fn login(username: String, password: String) -> Result<(), ServerFnError> 
 }
 
 #[server]
-pub async fn get_user() -> Result<String, ServerFnError> {
+pub async fn get_user_from_session() -> Result<crate::User, ServerFnError> {
     let user: Option<Identity> = extract().await?;
 
     let session: Session = extract().await?;
@@ -96,15 +112,18 @@ pub async fn get_user() -> Result<String, ServerFnError> {
     }
 
     if let Some(user) = user {
-        println!("User found");
-        Ok(user.id().unwrap())
+        match find_user_by_username(&user.id().unwrap()) {
+            Ok(some_user) => match some_user {
+                Some(user) => Ok(user),
+                None => Err(ServerFnError::new("No user found")),
+            },
+            Err(_err) => Err(ServerFnError::new("Internal server error")),
+        }
     } else {
         println!("No user found");
         Err(ServerFnError::new("No user found"))
     }
 }
-
-pub async fn validate_credentials() {}
 
 #[server(SignUp, "/api")]
 pub async fn signup(
@@ -116,10 +135,24 @@ pub async fn signup(
 ) -> Result<(), ServerFnError> {
     use crate::db::users_db::*;
 
-    let mut conn = establish_connection();
+    // This should have been done on the form submit, but just in case something snuck through
+    if confirm_password != password {
+        return Err(ServerFnError::new("Username and password do not match"));
+    }
 
-    // TODO: Verify Username
+    let username: String = username.trim().to_lowercase();
 
+    // Checks db to ensure unique usernames
+    match does_user_exist(&username) {
+        Ok(username_exists) => {
+            if username_exists {
+                return Err(ServerFnError::new("That username is already taken"));
+            }
+        }
+        Err(_err) => return Err(ServerFnError::new("Internal server error")),
+    }
+
+    // Hash password
     let pass_hash = hash_password(password).expect("Error hashing password");
 
     let user_info = UserInfo {
@@ -129,8 +162,10 @@ pub async fn signup(
         pass_hash,
     };
 
-    create_user(&mut conn, user_info);
+    // Creates DB user
+    create_user(user_info);
 
+    // Saving user to current session to stay logged in
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
         return Err(ServerFnError::new("No httpRequest stuff"));
     };
@@ -140,15 +175,6 @@ pub async fn signup(
     leptos_actix::redirect("/user");
 
     Ok(())
-}
-
-#[cfg(feature = "ssr")]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UserInfo {
-    pub username: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub pass_hash: String,
 }
 
 #[cfg(test)]

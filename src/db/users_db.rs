@@ -15,7 +15,8 @@ pub fn establish_connection() -> PgConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
-pub fn create_user(conn: &mut PgConnection, user_info: crate::auth::UserInfo) -> DBUser {
+pub fn create_user(user_info: crate::auth::UserInfo) -> DBUser {
+    let mut conn = establish_connection();
     let new_user = NewDBUser {
         first_name: &user_info.first_name,
         last_name: &user_info.last_name,
@@ -28,29 +29,33 @@ pub fn create_user(conn: &mut PgConnection, user_info: crate::auth::UserInfo) ->
     diesel::insert_into(users::table)
         .values(&new_user)
         .returning(DBUser::as_returning())
-        .get_result(conn)
+        .get_result(&mut conn)
         .expect("ERROR saving new user")
 }
 
-pub fn get_pass_hash_for_username(uname: String) -> Result<String, diesel::result::Error> {
+pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::result::Error> {
     use schema::users::dsl::*;
-
     let mut connection = establish_connection();
 
-    let results = users
+    users
         .filter(username.eq(uname))
         .limit(1)
         .select(DBUser::as_select())
         .first(&mut connection)
-        .optional();
+        .optional()
+}
 
-    match results {
-        Ok(maybe_user) => match maybe_user {
-            Some(user) => Ok(user.pass_hash),
-            None => Err(diesel::result::Error::NotFound),
-        },
-        Err(err) => Err(err),
-    }
+pub fn update_db_username(
+    uname: &String,
+    new_uname: &String,
+) -> Result<DBUser, diesel::result::Error> {
+    use schema::users::dsl::*;
+    let mut connection = establish_connection();
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set(username.eq(new_uname))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)
 }
 
 pub fn show_users(connection: &mut PgConnection) {
