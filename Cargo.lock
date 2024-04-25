@@ -408,6 +408,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "auth_leptos"
+version = "0.1.0"
+dependencies = [
+ "actix-files",
+ "actix-identity",
+ "actix-session",
+ "actix-web",
+ "argon2",
+ "cfg-if",
+ "console_error_panic_hook",
+ "diesel",
+ "dotenvy",
+ "http 1.1.0",
+ "lazy_static",
+ "leptos",
+ "leptos_actix",
+ "leptos_meta",
+ "leptos_router",
+ "serde",
+ "serde_json",
+ "true",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -761,31 +786,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
 dependencies = [
  "cipher",
-]
-
-[[package]]
-name = "dAIly"
-version = "0.1.0"
-dependencies = [
- "actix-files",
- "actix-identity",
- "actix-session",
- "actix-web",
- "argon2",
- "cfg-if",
- "console_error_panic_hook",
- "diesel",
- "dotenvy",
- "http 1.1.0",
- "lazy_static",
- "leptos",
- "leptos_actix",
- "leptos_meta",
- "leptos_router",
- "serde",
- "serde_json",
- "true",
- "wasm-bindgen",
 ]
 
 [[package]]

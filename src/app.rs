@@ -9,7 +9,7 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/dAIly.css"/>
+        <Stylesheet id="leptos" href="/pkg/auth_leptos.css"/>
         <Stylesheet
             id="boostrap"
             href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"

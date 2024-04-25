@@ -7,7 +7,7 @@ use actix_web::cookie::Key;
 async fn main() -> std::io::Result<()> {
     use actix_files::Files;
     use actix_web::*;
-    use dAIly::app::*;
+    use auth_leptos::app::*;
     use leptos::*;
     use leptos_actix::{generate_route_list, LeptosRoutes};
 
@@ -78,7 +78,7 @@ pub fn main() {
     // a client-side main function is required for using `trunk serve`
     // prefer using `cargo leptos serve` instead
     // to run: `trunk serve --open --features csr`
-    use dAIly::app::*;
+    use auth_leptos::app::*;
 
     console_error_panic_hook::set_once();
 

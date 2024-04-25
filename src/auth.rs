@@ -11,6 +11,12 @@ use cfg_if::cfg_if;
 use leptos::*;
 
 #[cfg(feature = "ssr")]
+use crate::db::db_helper::create_user;
+#[cfg(feature = "ssr")]
+use crate::db::db_helper::does_user_exist;
+#[cfg(feature = "ssr")]
+use crate::db::db_helper::find_user_by_username;
+#[cfg(feature = "ssr")]
 use actix_session::Session;
 #[cfg(feature = "ssr")]
 use leptos_actix::extract;
@@ -18,12 +24,6 @@ use leptos_actix::extract;
 use serde::Deserialize;
 #[cfg(feature = "ssr")]
 use serde::Serialize;
-
-use crate::db::db_helper::create_user;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::does_user_exist;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::find_user_by_username;
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
