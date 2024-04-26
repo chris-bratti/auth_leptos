@@ -3,6 +3,9 @@ use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
+static PASSWORD_PATTERN: &str =
+    "^.*(?=.{8,}).*(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@!:#$^;%&?]).+$";
+
 #[component]
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
@@ -47,6 +50,9 @@ fn HomePage() -> impl IntoView {
             <A href="/signup" class="btn btn-primary">
                 Sign Up
             </A>
+            <A class="btn btn-primary" href="/user">
+                "To user"
+            </A>
         </div>
     }
 }
@@ -80,28 +86,28 @@ fn SignUp() -> impl IntoView {
             >
                 <div class="mb-3">
                     <label class="form-label">
-                        "First Name" <input class="form-control" type="text" name="first_name"/>
+                        "First Name" <input class="form-control" type="text" name="first_name" required=true/>
                     </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">
-                        "Last Name" <input class="form-control" type="text" name="last_name"/>
+                        "Last Name" <input class="form-control" type="text" name="last_name" required=true/>
                     </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">
-                        "Username" <input class="form-control" type="text" name="username"/>
+                        "Username" <input class="form-control" type="text" name="username" required=true minLength=5 maxLength=16/>
                     </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">
-                        "Password" <input class="form-control" type="password" name="password"/>
+                        "Password" <input class="form-control" type="password" name="password" required=true minLength=8 maxLength=16 pattern={PASSWORD_PATTERN}/>
                     </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">
                         "Password"
-                        <input class="form-control" type="password" name="confirm_password"/>
+                        <input class="form-control" type="password" name="confirm_password" required=true minLength=8 maxLength=16 pattern={PASSWORD_PATTERN}/ >
                     </label>
                     {move || {
                         if !passwords_match.get() {
@@ -127,7 +133,7 @@ fn SignUp() -> impl IntoView {
                     }}
 
                 </div>
-                <input class="btn btn-primary" type="submit" value="Login"/>
+                <input class="btn btn-primary" type="submit" value="Sign Up"/>
             </ActionForm>
         </div>
     }
@@ -171,9 +177,6 @@ fn Auth() -> impl IntoView {
                 }
             }}
 
-            <A class="btn btn-primary" href="/user">
-                "To user"
-            </A>
         </div>
     }
 }
@@ -236,6 +239,7 @@ fn ChangePassword(username: String) -> impl IntoView {
     let update_password_value = update_password.value();
 
     let (passwords_match, set_passwords_match) = create_signal(true);
+    let (old_pass_used, set_old_pass_used) = create_signal(false);
     view! {
         <h1>Change Password</h1>
         <div style:font-family="sans-serif" style:text-align="center">
@@ -249,22 +253,26 @@ fn ChangePassword(username: String) -> impl IntoView {
                         set_passwords_match(false);
                         ev.prevent_default();
                     }
+                    if data_values.new_password == data_values.current_password{
+                        set_old_pass_used(true);
+                        ev.prevent_default();
+                    }
                 }
             } action=update_password>
                 <input class="form-control" type="hidden" name="username" value={username}/>
                 <div class="mb-3">
                     <label class="form-label">
-                        "Current Password" <input class="form-control" type="password" name="current_password"/>
+                        "Current Password" <input class="form-control" type="password" name="current_password" required=true/>
                     </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">
-                        "New Password" <input class="form-control" type="password" name="new_password"/>
+                        "New Password" <input class="form-control" type="password" name="new_password" required=true minLength=8 maxLength=16 pattern={PASSWORD_PATTERN}/>
                     </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">
-                        "Confirm New Password" <input class="form-control" type="password" name="confirm_new_password"/>
+                        "Confirm New Password" <input class="form-control" type="password" name="confirm_new_password" required=true minLength=8 maxLength=16 pattern={PASSWORD_PATTERN}/>
                     </label>
                 </div>
                 <input class="btn btn-primary" type="submit" value="Update Password"/>
@@ -272,6 +280,13 @@ fn ChangePassword(username: String) -> impl IntoView {
             {move || {
                 if !passwords_match.get() {
                     view! { <p>Passwords do not match</p> }.into_view()
+                } else {
+                    view! {}.into_view()
+                }
+            }}
+            {move || {
+                if old_pass_used.get() {
+                    view! { <p>New password cannot match current password</p> }.into_view()
                 } else {
                     view! {}.into_view()
                 }

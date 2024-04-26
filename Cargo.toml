@@ -26,6 +26,7 @@ serde_json = "1.0.116"
 cfg-if = "1.0.0"
 argon2 = "0.5.3"
 lazy_static = { version = "1.4.0", optional = true }
+regex = { version = "1.10.4", optional = true }
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]
@@ -41,11 +42,13 @@ ssr = [
   "dep:actix-identity",
   "dep:diesel",
   "dep:dotenvy",
-  "dep:lazy_static"
+  "dep:lazy_static",
+  "dep:regex"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]
 lazy_static = ["dep:lazy_static"]
+regex = ["dep:regex"]
 
 # Defines a size-optimized profile for the WASM bundle in release mode
 [profile.wasm-release]

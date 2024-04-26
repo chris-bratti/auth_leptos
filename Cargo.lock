@@ -426,6 +426,7 @@ dependencies = [
  "leptos_actix",
  "leptos_meta",
  "leptos_router",
+ "regex",
  "serde",
  "serde_json",
  "true",

@@ -27,6 +27,9 @@ use serde::Serialize;
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
+
+    use regex::Regex;
+
 fn hash_password(password: String) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
 
@@ -47,6 +50,17 @@ fn verify_password(
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok())
+}
+
+fn check_valid_password(password: &String) -> bool{
+    // Rust's Regex crate does not support Lookahead matching, so have to break criteria into multiple patterns
+    let contains_digit = Regex::new("\\d+").expect("Error parsing regex");
+    let contains_capital = Regex::new("[A-Z]+").expect("Error parsing regex");
+    let contains_special = Regex::new("[!:@#$^;%&?]+").expect("Error parsing regex");
+
+    let valid = contains_digit.is_match(password) && contains_capital.is_match(password) && contains_special.is_match(password);
+
+    valid && password.len() >= 8 && password.len() <= 16
 }
     }
 }
@@ -139,6 +153,11 @@ pub async fn signup(
         return Err(ServerFnError::new("Username and password do not match"));
     }
 
+    // Do server side password strength validation
+    if !check_valid_password(&password) {
+        return Err(ServerFnError::new("Password does not meet requirements"));
+    }
+
     let username: String = username.trim().to_lowercase();
 
     // Checks db to ensure unique usernames
@@ -154,6 +173,7 @@ pub async fn signup(
     // Hash password
     let pass_hash = hash_password(password).expect("Error hashing password");
 
+    // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name,
@@ -184,24 +204,35 @@ pub async fn change_password(
     new_password: String,
     confirm_new_password: String,
 ) -> Result<(), ServerFnError> {
+    // Retrieve and check if supplied current password matches against store password hash
     let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
         .map_err(|_err| ServerFnError::new("Error getting user"));
 
     let verified_result = verify_password(&current_password, &pass_result?);
 
+    // Check supplied current password is valid
     if verified_result.is_err() || !verified_result.unwrap() {
         return Err(ServerFnError::new("Incorrect password"));
     }
 
+    // Server side password confirmation
     if new_password != confirm_new_password {
         return Err(ServerFnError::new("Passwords do not match"));
     }
 
+    // Do server side password strength validation
+    if !check_valid_password(&new_password) {
+        return Err(ServerFnError::new("Password does not meet requirements"));
+    }
+
+    // Hash new password
     let pass_hash = hash_password(new_password).expect("Error hashing password");
 
+    // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash)
         .map_err(|_err| ServerFnError::new("Error updating user password"))?;
 
+    // Redirect
     leptos_actix::redirect("/login");
 
     Ok(())
@@ -210,7 +241,7 @@ pub async fn change_password(
 #[cfg(test)]
 mod test_auth {
 
-    use crate::auth::verify_password;
+    use crate::auth::{check_valid_password, verify_password};
 
     use super::hash_password;
 
@@ -231,5 +262,40 @@ mod test_auth {
         assert!(pass_match.is_ok());
 
         assert_eq!(pass_match.unwrap(), true);
+    }
+
+    #[test]
+    fn test_password_validation() {
+        let valid_password = String::from("Password123!");
+
+        assert!(check_valid_password(&valid_password));
+
+        let valid_password = String::from("g00dP@ssw0rd2");
+
+        assert!(check_valid_password(&valid_password));
+
+        let invalid_password = String::from("password2");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("Thispasswordislongerthanwhatisallowed222222!!!!!");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("$H0rt");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("nocapital123!");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("noSpecial1112");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("noNumbers!!");
+
+        assert!(!check_valid_password(&invalid_password));
     }
 }
