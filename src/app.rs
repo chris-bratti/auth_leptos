@@ -36,11 +36,9 @@ pub fn App() -> impl IntoView {
     }
 }
 
-/// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
-
+    // Basic homepage
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
             <h1>"Welcome to Leptos!"</h1>
@@ -59,17 +57,20 @@ fn HomePage() -> impl IntoView {
 
 #[component]
 fn SignUp() -> impl IntoView {
+    // Uses the SignUp server function
     let signup = create_server_action::<SignUp>();
+    // Used to fetch any errors returned from the server
     let signup_value = signup.value();
-
+    // Used for client side password validation
     let (passwords_match, set_passwords_match) = create_signal(true);
 
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
             <h1>"Create New User"</h1>
-
+            // Form for user sign up, does some client side field validation
             <ActionForm
                 on:submit=move |ev| {
+                    // Client side password validation
                     let data = SignUp::from_event(&ev);
                     if data.is_err() {
                         ev.prevent_default();
@@ -118,6 +119,7 @@ fn SignUp() -> impl IntoView {
                     }}
 
                     {move || {
+                        // Displays any errors returned from the server
                         match signup_value.get() {
                             Some(response) => {
                                 match response {
@@ -141,8 +143,9 @@ fn SignUp() -> impl IntoView {
 
 #[component]
 fn Auth() -> impl IntoView {
+    // Uses Login server function
     let login = create_server_action::<Login>();
-
+    // Used to fetch any errors returned from the Login function
     let login_value = login.value();
 
     view! {
@@ -164,6 +167,7 @@ fn Auth() -> impl IntoView {
             </ActionForm>
 
             {move || {
+                // Displays any errors returned from the server
                 match login_value.get() {
                     Some(response) => {
                         match response {
@@ -183,6 +187,7 @@ fn Auth() -> impl IntoView {
 
 #[component]
 fn UserPage() -> impl IntoView {
+    // Calls server function to retrieve User object from username currently stored in session
     let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
     let loading = user_result.loading();
     let user_signal: RwSignal<Option<User>> = create_rw_signal(None);

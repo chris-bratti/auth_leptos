@@ -30,6 +30,7 @@ cfg_if! {
 
     use regex::Regex;
 
+/// Hash password with Argon2
 fn hash_password(password: String) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
 
@@ -42,6 +43,7 @@ fn hash_password(password: String) -> Result<String, argon2::password_hash::Erro
     Ok(password_hash)
 }
 
+/// Verifies password against hash
 fn verify_password(
     password: &String,
     password_hash: &String,
@@ -52,6 +54,7 @@ fn verify_password(
         .is_ok())
 }
 
+/// Server side password strength validation
 fn check_valid_password(password: &String) -> bool{
     // Rust's Regex crate does not support Lookahead matching, so have to break criteria into multiple patterns
     let contains_digit = Regex::new("\\d+").expect("Error parsing regex");
@@ -90,33 +93,41 @@ pub async fn get_session() -> Result<String, ServerFnError> {
     Ok(String::from("Goat"))
 }
 
+/// Server function to log in user
 #[server(Login, "/api")]
 async fn login(username: String, password: String) -> Result<(), ServerFnError> {
+    // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
     println!("Attempting to log in user {username}");
+    // Retrieve pass hash from DB
     let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
         .map_err(|_err| ServerFnError::new("Error getting user"));
 
+    // Verify password hash with Argon2
     let verified_result = verify_password(&password, &pass_result?);
 
     if verified_result.is_err() || !verified_result.unwrap() {
         return Err(ServerFnError::new("Username or password incorrect"));
     }
 
-    // attach a verified user identity to the active session
+    // Get current context
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
         return Err(ServerFnError::new("No httpRequest stuff"));
     };
 
+    // Attach user to current session
     Identity::login(&req.extensions(), username.into()).unwrap();
 
+    // Redirect
     leptos_actix::redirect("/user");
 
     Ok(())
 }
 
+/// Retrieves the User information based on username in current session
 #[server]
 pub async fn get_user_from_session() -> Result<crate::User, ServerFnError> {
+    // Extract Actix Identity
     let user: Option<Identity> = extract().await?;
 
     let session: Session = extract().await?;
@@ -126,6 +137,7 @@ pub async fn get_user_from_session() -> Result<crate::User, ServerFnError> {
         None => println!("No user in session"),
     }
 
+    // If user exists in session, gets User entry from DB
     if let Some(user) = user {
         match find_user_by_username(&user.id().unwrap()) {
             Ok(some_user) => match some_user {
@@ -140,6 +152,7 @@ pub async fn get_user_from_session() -> Result<crate::User, ServerFnError> {
     }
 }
 
+/// Server function to create a new user
 #[server(SignUp, "/api")]
 pub async fn signup(
     first_name: String,
@@ -158,6 +171,7 @@ pub async fn signup(
         return Err(ServerFnError::new("Password does not meet requirements"));
     }
 
+    // Usernames should case insensitive
     let username: String = username.trim().to_lowercase();
 
     // Checks db to ensure unique usernames
@@ -197,6 +211,7 @@ pub async fn signup(
     Ok(())
 }
 
+/// Server function to update user password
 #[server(UpdatePassword, "/api")]
 pub async fn change_password(
     username: String,
