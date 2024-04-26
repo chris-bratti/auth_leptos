@@ -23,13 +23,8 @@ pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> 
     }
 }
 
-pub fn update_user_password(
-    username: &String,
-    old_pass_hash: &String,
-    new_pass_hash: &String,
-) -> Result<(), DBError> {
-    update_db_password(username, old_pass_hash, new_pass_hash)
-        .map_err(|err| DBError::InternalServerError(err))?;
+pub fn update_user_password(username: &String, new_pass_hash: &String) -> Result<(), DBError> {
+    update_db_password(username, new_pass_hash).map_err(|err| DBError::InternalServerError(err))?;
 
     Ok(())
 }

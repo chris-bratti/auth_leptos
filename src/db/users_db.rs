@@ -59,21 +59,16 @@ pub fn update_db_username(
 
 pub fn update_db_password(
     uname: &String,
-    old_pass: &String,
     new_pass: &String,
 ) -> Result<DBUser, diesel::result::Error> {
     use schema::users::dsl::*;
 
     let mut connection = establish_connection();
 
-    diesel::update(
-        users
-            .filter(username.eq(uname))
-            .filter(pass_hash.eq(old_pass)),
-    )
-    .set(pass_hash.eq(new_pass))
-    .returning(DBUser::as_returning())
-    .get_result(&mut connection)
+    diesel::update(users.filter(username.eq(uname)))
+        .set(pass_hash.eq(new_pass))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)
 }
 
 pub fn show_users(connection: &mut PgConnection) {
@@ -160,8 +155,7 @@ pub mod test_db {
 
         // Update - password
         let new_password = String::from("newsecretpassword");
-        let updated_db_user =
-            update_db_password(&String::from("barfoo"), &user_info.pass_hash, &new_password);
+        let updated_db_user = update_db_password(&String::from("barfoo"), &new_password);
         assert!(updated_db_user.is_ok());
 
         let updated_db_user = updated_db_user.unwrap();

@@ -5,6 +5,8 @@ use actix_web::cookie::Key;
 #[actix_web::main]
 
 async fn main() -> std::io::Result<()> {
+    use std::time::Duration;
+
     use actix_files::Files;
     use actix_web::*;
     use auth_leptos::app::*;
@@ -39,7 +41,11 @@ async fn main() -> std::io::Result<()> {
             .service(favicon)
             .leptos_routes(leptos_options.to_owned(), routes.to_owned(), App)
             .app_data(web::Data::new(leptos_options.to_owned()))
-            .wrap(IdentityMiddleware::default())
+            .wrap(
+                IdentityMiddleware::builder()
+                    .login_deadline(Some(Duration::new(259200, 0)))
+                    .build(),
+            )
             .wrap(SessionMiddleware::new(store.clone(), secret_key.clone()))
         //.wrap(middleware::Compress::default())
     })

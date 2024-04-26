@@ -134,8 +134,6 @@ pub async fn signup(
     password: String,
     confirm_password: String,
 ) -> Result<(), ServerFnError> {
-    use crate::db::users_db::*;
-
     // This should have been done on the form submit, but just in case something snuck through
     if confirm_password != password {
         return Err(ServerFnError::new("Username and password do not match"));
@@ -179,8 +177,39 @@ pub async fn signup(
     Ok(())
 }
 
+#[server(UpdatePassword, "/api")]
+pub async fn change_password(
+    username: String,
+    current_password: String,
+    new_password: String,
+    confirm_new_password: String,
+) -> Result<(), ServerFnError> {
+    let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
+        .map_err(|_err| ServerFnError::new("Error getting user"));
+
+    let verified_result = verify_password(&current_password, &pass_result?);
+
+    if verified_result.is_err() || !verified_result.unwrap() {
+        return Err(ServerFnError::new("Incorrect password"));
+    }
+
+    if new_password != confirm_new_password {
+        return Err(ServerFnError::new("Passwords do not match"));
+    }
+
+    let pass_hash = hash_password(new_password).expect("Error hashing password");
+
+    crate::db::db_helper::update_user_password(&username, &pass_hash)
+        .map_err(|_err| ServerFnError::new("Error updating user password"))?;
+
+    leptos_actix::redirect("/login");
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test_auth {
+
     use crate::auth::verify_password;
 
     use super::hash_password;

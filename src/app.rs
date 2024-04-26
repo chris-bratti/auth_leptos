@@ -1,4 +1,4 @@
-use crate::auth::*;
+use crate::{auth::*, User};
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
@@ -182,6 +182,8 @@ fn Auth() -> impl IntoView {
 fn UserPage() -> impl IntoView {
     let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
     let loading = user_result.loading();
+    let user_signal: RwSignal<Option<User>> = create_rw_signal(None);
+    let (update_password, set_update_password) = create_signal(false);
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
 
@@ -190,7 +192,7 @@ fn UserPage() -> impl IntoView {
                     if loading() {
                         view! { <p>Loading...</p> }.into_view()
                     } else {
-                        let current_user = match user_result.get() {
+                        user_signal.set(match user_result.get() {
                             Some(user_result) => {
                                 match user_result {
                                     Ok(user) => Some(user),
@@ -198,26 +200,99 @@ fn UserPage() -> impl IntoView {
                                 }
                             }
                             None => None,
-                        };
-                        match current_user {
+                        });
+                        match user_signal.get() {
                             None => {
-                                view! { <NotLoggedIn/> }
+                                view! { <NotLoggedIn/> }.into_view()
                             }
                             Some(user) => {
                                 {
-                                    view! {
-                                        <h1>
-                                            {format!("Welcome {} {}", user.first_name, user.last_name)}
-                                        </h1>
-                                    }
+                                    view!{
+                                        {move || {
+                                            if update_password.get() {
+                                                //let username = user.username;
+                                                view! {<ChangePassword username={user.username.clone()}/>}.into_view()
+                                            }else{
+                                                view! {<button class="btn btn-primary" on:click=move |_| set_update_password(true)>Update Password</button>}.into_view()
+                                            }
+                                        }}
+                                    }.into_view()
                                 }
-                                    .into_view()
+
                             }
                         }
                     }
                 }
             }}
 
+        </div>
+    }
+}
+
+#[component]
+fn ChangePassword(username: String) -> impl IntoView {
+    let update_password = create_server_action::<UpdatePassword>();
+
+    let update_password_value = update_password.value();
+
+    let (passwords_match, set_passwords_match) = create_signal(true);
+    view! {
+        <h1>Change Password</h1>
+        <div style:font-family="sans-serif" style:text-align="center">
+            <ActionForm on:submit=move |ev| {
+                let data = UpdatePassword::from_event(&ev);
+                if data.is_err() {
+                    ev.prevent_default();
+                } else {
+                    let data_values = data.unwrap();
+                    if data_values.new_password != data_values.confirm_new_password {
+                        set_passwords_match(false);
+                        ev.prevent_default();
+                    }
+                }
+            } action=update_password>
+                <input class="form-control" type="hidden" name="username" value={username}/>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "Current Password" <input class="form-control" type="password" name="current_password"/>
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "New Password" <input class="form-control" type="password" name="new_password"/>
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "Confirm New Password" <input class="form-control" type="password" name="confirm_new_password"/>
+                    </label>
+                </div>
+                <input class="btn btn-primary" type="submit" value="Update Password"/>
+            </ActionForm>
+            {move || {
+                if !passwords_match.get() {
+                    view! { <p>Passwords do not match</p> }.into_view()
+                } else {
+                    view! {}.into_view()
+                }
+            }}
+            {move || {
+                match update_password_value.get() {
+                    Some(response) => {
+                        match response {
+                            Ok(_) => view! {}.into_view(),
+                            Err(server_err) => {
+                                view! { <p>{format!("{}", server_err.to_string())}</p> }.into_view()
+                            }
+                        }
+                    }
+                    None => view! {}.into_view(),
+                }
+            }}
+
+            <A class="btn btn-primary" href="/user">
+                "To user"
+            </A>
         </div>
     }
 }
