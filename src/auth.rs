@@ -1,15 +1,25 @@
+use std::env;
+
 #[cfg(feature = "ssr")]
 use actix_identity::Identity;
 #[cfg(feature = "ssr")]
 use actix_web::HttpMessage;
+#[cfg(feature = "ssr")]
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit},
+    Aes256Gcm,
+    Key, // Or `Aes128Gcm`
+    Nonce,
+};
 #[cfg(feature = "ssr")]
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 use cfg_if::cfg_if;
-use chrono::Duration;
-use leptos::{ev::GenericEventHandler, server_fn::ServerFn, *};
+#[cfg(feature = "ssr")]
+use dotenvy::dotenv;
+use leptos::*;
 
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::create_user;
@@ -96,14 +106,62 @@ fn verify_reset_link(username: &String, reset_link: &String) -> Result<bool, Ser
 
 fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
 
-    let user = crate::db::db_helper::find_user_by_username(username).expect("Error getting user").expect("No user found");
+    let encrypted_email = crate::db::db_helper::get_user_email(&username).map_err(|_| ServerFnError::new("Error fetching user"))?;
 
-    // Get user email here
-    let email = "".to_string();
+    let user = crate::db::db_helper::find_user_by_username(&username).map_err(|_| ServerFnError::new("Error fetching user"))?;
 
-    smtp::send_email(&email, generate_reset_email_body(username, reset_token), &"Test".to_string());
+    let name = user.expect("No user present!").first_name;
+
+    let user_email = decrypt_email(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
+
+    smtp::send_email(&user_email, generate_reset_email_body(username, reset_token), &name);
 
     Ok(())
+}
+
+fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
+    dotenv().ok();
+
+    let encryption_key = env::var("ENCRYPTION_KEY").expect("ENCRYPTION_KEY must be set");
+
+    let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
+
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
+    let ciphertext = cipher.encrypt(&nonce, email.as_bytes())?;
+
+    //let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())?;
+
+    let mut encrypted_data: Vec<u8> = nonce.to_vec();
+    encrypted_data.extend_from_slice(&ciphertext);
+
+
+    let output = hex::encode(encrypted_data);
+    println!("{}", output);
+    Ok(output)
+}
+
+fn decrypt_email(encrypted_email: String) -> Result<String, aes_gcm::Error> {
+    dotenv().ok();
+
+    let encryption_key = env::var("ENCRYPTION_KEY").expect("ENCRYPTION_KEY must be set");
+
+    let encrypted_data = hex::decode(encrypted_email)
+        .expect("failed to decode hex string into vec");
+
+    let key = Key::<Aes256Gcm>::from_slice(encryption_key.as_bytes());
+
+    // 12 digit nonce is prepended to encrypted data. Split nonce from encrypted email
+    let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
+    let nonce = Nonce::from_slice(nonce_arr);
+
+    let cipher = Aes256Gcm::new(key);
+
+    let plaintext = cipher.decrypt(nonce, ciphered_data)
+        .expect("failed to decrypt data");
+
+    Ok(String::from_utf8(plaintext)
+        .expect("failed to convert vector of bytes to string"))
 }
     }
 }
@@ -114,6 +172,7 @@ pub struct UserInfo {
     pub username: String,
     pub first_name: String,
     pub last_name: String,
+    pub email: String,
     pub pass_hash: String,
 }
 
@@ -199,6 +258,7 @@ pub async fn signup(
     last_name: String,
     username: String,
     password: String,
+    email: String,
     confirm_password: String,
 ) -> Result<(), ServerFnError> {
     // This should have been done on the form submit, but just in case something snuck through
@@ -227,12 +287,15 @@ pub async fn signup(
     // Hash password
     let pass_hash = hash_password(password).expect("Error hashing password");
 
+    let encrypted_email = encrypt_email(&email).expect("Error encrypting email");
+
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name,
         last_name,
         pass_hash,
+        email: encrypted_email,
     };
 
     // Creates DB user
@@ -335,24 +398,33 @@ pub async fn reset_password(
 }
 
 #[server(RequestPasswordReset, "/api")]
-pub async fn request_password_reset(username: String, email: String) -> Result<(), ServerFnError> {
+pub async fn request_password_reset(username: String) -> Result<(), ServerFnError> {
+    // Checks if user exists. If it doesn't, stops process but produces no error
+    // This is to maintain username security
+    match does_user_exist(&username) {
+        Ok(username_exists) => {
+            if !username_exists {
+                return Ok(());
+            }
+        }
+        Err(_err) => return Err(ServerFnError::new("Internal server error")),
+    }
+    // Redirects user home
+    leptos_actix::redirect("/");
+
     // Generate random 32 bit reset link path
     let generated_link = generate_password_reset_link()?;
 
-    println!("{generated_link}");
-
     // Hash link
     let reset_token = hash_password(generated_link.clone())
-        .map_err(|_| ServerFnError::new("Error hashing link"))?;
+        .map_err(|_| ServerFnError::new("Internal server error"))?;
 
     // Save link hash to DB
     crate::db::db_helper::save_reset(&username, &reset_token)
-        .map_err(|_| ServerFnError::new("Error saving to DB"))?;
+        .map_err(|_| ServerFnError::new("Internal server error"))?;
 
     // SMTP send email
     send_reset_email(&username, &generated_link).expect("Error sending email");
-
-    leptos_actix::redirect("/home");
 
     Ok(())
 }
@@ -360,9 +432,9 @@ pub async fn request_password_reset(username: String, email: String) -> Result<(
 #[cfg(test)]
 mod test_auth {
 
-    use crate::auth::{check_valid_password, verify_password};
+    use crate::auth::{check_valid_password, decrypt_email, verify_password};
 
-    use super::hash_password;
+    use super::{encrypt_email, hash_password};
 
     #[test]
     fn test_password_hashing() {
@@ -381,6 +453,19 @@ mod test_auth {
         assert!(pass_match.is_ok());
 
         assert_eq!(pass_match.unwrap(), true);
+    }
+
+    #[test]
+    fn test_email_encryption() {
+        let email = String::from("test@test.com");
+        let encrypted_email = encrypt_email(&email).expect("There was an error encrypting");
+
+        assert_ne!(encrypted_email, email);
+
+        let decrypted_email =
+            decrypt_email(encrypted_email).expect("There was an error decrypting");
+
+        assert_eq!(email, decrypted_email);
     }
 
     #[test]

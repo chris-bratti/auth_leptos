@@ -23,6 +23,7 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         last_name: &user_info.last_name,
         username: &user_info.username,
         pass_hash: &user_info.pass_hash,
+        email: &user_info.email,
     };
 
     println!("{:#?}", new_user);
@@ -136,6 +137,7 @@ pub mod test_db {
             last_name: String::from("Barley"),
             username: String::from("foobar"),
             pass_hash: String::from("superdupersecrethash"),
+            email: String::from("foo@bar.com"),
         };
 
         // Create

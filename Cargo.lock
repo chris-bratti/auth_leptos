@@ -430,12 +430,14 @@ dependencies = [
  "actix-identity",
  "actix-session",
  "actix-web",
+ "aes-gcm",
  "argon2",
  "cfg-if",
  "chrono",
  "console_error_panic_hook",
  "diesel",
  "dotenvy",
+ "hex",
  "http 1.1.0",
  "lazy_static",
  "leptos",
@@ -1285,6 +1287,12 @@ dependencies = [
  "ahash",
  "allocator-api2",
 ]
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hkdf"

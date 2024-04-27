@@ -121,6 +121,16 @@ pub fn save_reset(username: &String, reset_link: &String) -> Result<(), DBError>
     save_reset_link_to_db(username, reset_link).map_err(|err| DBError::InternalServerError(err))
 }
 
+pub fn get_user_email(username: &String) -> Result<String, DBError> {
+    let db_user =
+        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    match db_user {
+        Some(user) => Ok(user.email),
+        None => Err(DBError::NotFound(username.clone())),
+    }
+}
+
 pub enum DBError {
     NotFound(String),
     InternalServerError(diesel::result::Error),
@@ -179,6 +189,7 @@ pub mod test_db_helpers {
             last_name: String::from("bar"),
             username: String::from("foobar2"),
             pass_hash: String::from("supersecretpassword"),
+            email: String::from("foo@bar.com"),
         };
 
         // Create

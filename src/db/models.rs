@@ -11,6 +11,7 @@ pub struct DBUser {
     pub first_name: String,
     pub last_name: String,
     pub username: String,
+    pub email: String,
     pub pass_hash: String,
     pub reset_link: Option<String>,
     pub reset_link_expiration: Option<SystemTime>,
@@ -22,5 +23,6 @@ pub struct NewDBUser<'a> {
     pub first_name: &'a str,
     pub last_name: &'a str,
     pub username: &'a str,
+    pub email: &'a str,
     pub pass_hash: &'a str,
 }

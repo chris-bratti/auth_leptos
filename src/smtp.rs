@@ -1,11 +1,9 @@
 #[cfg(feature = "ssr")]
 use dotenvy::dotenv;
 #[cfg(feature = "ssr")]
-use lettre::message::header::{self, ContentType};
+use lettre::message::header::{self};
 #[cfg(feature = "ssr")]
 use lettre::message::{MultiPart, SinglePart};
-#[cfg(feature = "ssr")]
-use lettre::transport::smtp;
 #[cfg(feature = "ssr")]
 use lettre::transport::smtp::authentication::Credentials;
 #[cfg(feature = "ssr")]
@@ -32,6 +30,7 @@ pub fn generate_reset_email_body(username: &String, reset_token: &String) -> Str
             br {}
             // Substitute in the name of our recipient.
             p { "Hello " (username) "," }
+            br {}
             p { "We got received a request to reset your password."}
             br {}
             p {
@@ -53,8 +52,8 @@ pub fn send_email(email: &String, email_body: String, first_name: &String) {
     let from_email = env::var("FROM_EMAIL").expect("FROM_EMAIL must be set");
     let smtp_key = env::var("KEY").expect("KEY must be set");
     let email = Message::builder()
-        .from("NoBody <nobody@domain.tld>".parse().unwrap())
-        .to(format!("{} <{}>", first_name, email).parse().unwrap())
+        .from(format!("Leptos Auth <{from_email}>").parse().unwrap())
+        .to(format!("{first_name} <{email}>").parse().unwrap())
         .subject("Reset Your Password")
         .multipart(
             MultiPart::alternative() // This is composed of two parts.
