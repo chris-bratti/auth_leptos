@@ -9,7 +9,7 @@ use argon2::{
 };
 use cfg_if::cfg_if;
 use chrono::Duration;
-use leptos::{ev::GenericEventHandler, *};
+use leptos::{ev::GenericEventHandler, server_fn::ServerFn, *};
 
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::create_user;
@@ -17,6 +17,8 @@ use crate::db::db_helper::create_user;
 use crate::db::db_helper::does_user_exist;
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::find_user_by_username;
+#[cfg(feature = "ssr")]
+use crate::smtp::{self, generate_reset_email_body};
 #[cfg(feature = "ssr")]
 use actix_session::Session;
 #[cfg(feature = "ssr")]
@@ -90,6 +92,18 @@ fn verify_reset_link(username: &String, reset_link: &String) -> Result<bool, Ser
         },
         None => Err(ServerFnError::new("User hash not found or has expired"))
     }
+}
+
+fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
+
+    let user = crate::db::db_helper::find_user_by_username(username).expect("Error getting user").expect("No user found");
+
+    // Get user email here
+    let email = "".to_string();
+
+    smtp::send_email(&email, generate_reset_email_body(username, reset_token), &"Test".to_string());
+
+    Ok(())
 }
     }
 }
@@ -328,14 +342,15 @@ pub async fn request_password_reset(username: String, email: String) -> Result<(
     println!("{generated_link}");
 
     // Hash link
-    let link_hash = hash_password(generated_link.clone())
+    let reset_token = hash_password(generated_link.clone())
         .map_err(|_| ServerFnError::new("Error hashing link"))?;
 
     // Save link hash to DB
-    crate::db::db_helper::save_reset(&username, &link_hash)
+    crate::db::db_helper::save_reset(&username, &reset_token)
         .map_err(|_| ServerFnError::new("Error saving to DB"))?;
 
     // SMTP send email
+    send_reset_email(&username, &generated_link).expect("Error sending email");
 
     leptos_actix::redirect("/home");
 

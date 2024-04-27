@@ -1,5 +1,7 @@
 use std::fmt;
 
+use chrono::{DateTime, Utc};
+
 use crate::{auth::UserInfo, User};
 
 use super::users_db::{
@@ -33,8 +35,15 @@ pub fn get_reset_hash(username: &String) -> Result<Option<String>, DBError> {
     match db_user {
         Some(user) => {
             let expiry = user.reset_link_expiration.expect("No expiration date!");
-            let time_elapsed = expiry.elapsed().expect("Error parsing time!");
-            if time_elapsed.as_secs_f32() > 1200f32 {
+            let timestamp: DateTime<Utc> = DateTime::from(expiry);
+
+            // Get the current time
+            let current_time = Utc::now();
+
+            // Calculate the difference in minutes
+            let time_until_expiry = current_time.signed_duration_since(timestamp).num_minutes();
+
+            if time_until_expiry >= 0 {
                 return Err(DBError::Error("Token expired".to_string()));
             }
             Ok(user.reset_link)
