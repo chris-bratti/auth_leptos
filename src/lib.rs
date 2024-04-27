@@ -4,6 +4,7 @@ pub mod app;
 pub mod auth;
 #[cfg(feature = "ssr")]
 pub mod db;
+pub mod smtp;
 
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
