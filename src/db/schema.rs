@@ -7,6 +7,8 @@ diesel::table! {
         last_name -> Text,
         username -> Text,
         pass_hash -> Text,
+        reset_link -> Nullable<Text>,
+        reset_link_expiration -> Nullable<Timestamp>,
         active_sessions -> Nullable<Array<Nullable<Text>>>,
     }
 }

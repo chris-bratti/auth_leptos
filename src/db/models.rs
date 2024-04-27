@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::db::schema::*;
 use diesel::prelude::*;
 
@@ -10,6 +12,8 @@ pub struct DBUser {
     pub last_name: String,
     pub username: String,
     pub pass_hash: String,
+    pub reset_link: Option<String>,
+    pub reset_link_expiration: Option<SystemTime>,
 }
 
 #[derive(Insertable, Debug)]

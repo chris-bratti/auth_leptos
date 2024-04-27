@@ -1,9 +1,10 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema;
 use diesel::pg::PgConnection;
-use diesel::prelude::*;
+use diesel::{prelude::*, select};
 use dotenvy::dotenv;
 use std::env;
+use std::time::Duration;
 
 use super::schema::users;
 
@@ -30,6 +31,26 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         .values(&new_user)
         .returning(DBUser::as_returning())
         .get_result(&mut conn)
+}
+
+pub fn save_reset_link_to_db(uname: &String, rlink: &String) -> Result<(), diesel::result::Error> {
+    use schema::users::dsl::*;
+
+    let mut connection = establish_connection();
+
+    let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
+
+    // Gets 20 minutes from current time
+    let link_expiry = now
+        .checked_add(Duration::new(1200, 0))
+        .expect("Error parsing time");
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set((reset_link_expiration.eq(link_expiry), reset_link.eq(rlink)))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)?;
+
+    Ok(())
 }
 
 pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::result::Error> {

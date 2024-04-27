@@ -8,7 +8,8 @@ use argon2::{
     Argon2,
 };
 use cfg_if::cfg_if;
-use leptos::*;
+use chrono::Duration;
+use leptos::{ev::GenericEventHandler, *};
 
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::create_user;
@@ -64,6 +65,31 @@ fn check_valid_password(password: &String) -> bool{
     let valid = contains_digit.is_match(password) && contains_capital.is_match(password) && contains_special.is_match(password);
 
     valid && password.len() >= 8 && password.len() <= 16
+}
+
+fn generate_password_reset_link() -> Result<String, ServerFnError> {
+    use rand::{thread_rng, Rng};
+    use rand::distributions::{Alphanumeric};
+
+    let mut rng = thread_rng();
+
+    let generated_link_path: String = (&mut rng).sample_iter(Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    Ok(generated_link_path)
+}
+
+fn verify_reset_link(username: &String, reset_link: &String) -> Result<bool, ServerFnError> {
+    let link_hash = crate::db::db_helper::get_reset_hash(username).map_err(|_| ServerFnError::new("Unable to get user link"))?;
+
+    match link_hash {
+        Some(hash) => {
+            verify_password(reset_link, &hash).map_err(|_| ServerFnError::new("Error validation hash"))
+        },
+        None => Err(ServerFnError::new("User hash not found or has expired"))
+    }
 }
     }
 }
@@ -249,6 +275,69 @@ pub async fn change_password(
 
     // Redirect
     leptos_actix::redirect("/login");
+
+    Ok(())
+}
+
+#[server(PasswordReset, "/api")]
+pub async fn reset_password(
+    username: String,
+    password_link: String,
+    new_password: String,
+    confirm_password: String,
+) -> Result<(), ServerFnError> {
+    println!("Requesting to reset password");
+    // Verify reset link
+    let link_verification = verify_reset_link(&username, &password_link)?;
+
+    // If link does not match or is no longer valid, return
+    if !link_verification {
+        return Err(ServerFnError::new(
+            "Error validation link. Link may be expired. Please try again",
+        ));
+    }
+
+    // Server side password confirmation
+    if new_password != confirm_password {
+        return Err(ServerFnError::new("Passwords do not match"));
+    }
+
+    // Do server side password strength validation
+    if !check_valid_password(&new_password) {
+        return Err(ServerFnError::new("Password does not meet requirements"));
+    }
+
+    // Hash new password
+    let pass_hash = hash_password(new_password).expect("Error hashing password");
+
+    // Store new password in database
+    crate::db::db_helper::update_user_password(&username, &pass_hash)
+        .map_err(|_err| ServerFnError::new("Error updating user password"))?;
+
+    // Redirect
+    leptos_actix::redirect("/login");
+
+    Ok(())
+}
+
+#[server(RequestPasswordReset, "/api")]
+pub async fn request_password_reset(username: String, email: String) -> Result<(), ServerFnError> {
+    // Generate random 32 bit reset link path
+    let generated_link = generate_password_reset_link()?;
+
+    println!("{generated_link}");
+
+    // Hash link
+    let link_hash = hash_password(generated_link.clone())
+        .map_err(|_| ServerFnError::new("Error hashing link"))?;
+
+    // Save link hash to DB
+    crate::db::db_helper::save_reset(&username, &link_hash)
+        .map_err(|_| ServerFnError::new("Error saving to DB"))?;
+
+    // SMTP send email
+
+    leptos_actix::redirect("/home");
 
     Ok(())
 }

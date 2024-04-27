@@ -29,6 +29,8 @@ pub fn App() -> impl IntoView {
                     <Route path="/user" view=UserPage/>
                     <Route path="/signup" view=SignUp/>
                     <Route path="/login" view=Auth/>
+                    <Route path="/forgotpassword" view=ForgotPassword />
+                    <Route path="/reset/:generated_id" view=ResetPassword />
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>
@@ -51,6 +53,101 @@ fn HomePage() -> impl IntoView {
             <A class="btn btn-primary" href="/user">
                 "To user"
             </A>
+        </div>
+    }
+}
+
+#[component]
+fn ForgotPassword() -> impl IntoView {
+    // TODO: Will need to implement user emails in order for this to be more secure.
+    // Currently, you can just request any username with any email and you can reset the password
+    // Will require users to provide emails when signing up - could just replace usernames (maybe hash them though?)
+    let forgot_password = create_server_action::<RequestPasswordReset>();
+
+    view! {
+        <h1>Forgot Password</h1>
+        <div style:font-family="sans-serif" style:text-align="center">
+            <ActionForm action=forgot_password>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "Username" <input class="form-control" type="text" name="username" required=true/>
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "Email" <input class="form-control" type="email" name="email" required=true/>
+                    </label>
+                </div>
+                <input class="btn btn-primary" type="submit" value="Request Password Reset"/>
+            </ActionForm>
+        </div>
+    }
+}
+
+#[component]
+fn ResetPassword() -> impl IntoView {
+    let params = use_params_map();
+    let generated_id =
+        move || params.with(|params| params.get("generated_id").cloned().unwrap_or_default());
+    let (passwords_match, set_passwords_match) = create_signal(true);
+    // Uses the SignUp server function
+    let reset_password = create_server_action::<PasswordReset>();
+    // Used to fetch any errors returned from the server
+    let reset_password_value = reset_password.value();
+    view! {
+        <div style:font-family="sans-serif" style:text-align="center">
+            <h1>Reset Password</h1>
+            {move || view! {<p>{generated_id()}</p>}}
+            <ActionForm on:submit=move |ev| {
+                let data = PasswordReset::from_event(&ev);
+                if data.is_err() {
+                    ev.prevent_default();
+                } else {
+                    let data_values = data.unwrap();
+                    if data_values.new_password != data_values.confirm_password {
+                        set_passwords_match(false);
+                        ev.prevent_default();
+                    }
+                }
+            } action=reset_password>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "Username" <input class="form-control" type="text" name="username" required=true/>
+                    </label>
+                </div>
+                <input class="form-control" type="hidden" name="password_link" value={move || generated_id()}/>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "New Password" <input class="form-control" type="password" name="new_password" required=true minLength=8 maxLength=16 pattern={PASSWORD_PATTERN}/>
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">
+                        "Confirm New Password" <input class="form-control" type="password" name="confirm_password" required=true minLength=8 maxLength=16 pattern={PASSWORD_PATTERN}/>
+                    </label>
+                </div>
+                <input class="btn btn-primary" type="submit" value="Update Password"/>
+            </ActionForm>
+            {move || {
+                if !passwords_match.get() {
+                    view! { <p>Passwords do not match</p> }.into_view()
+                } else {
+                    view! {}.into_view()
+                }
+            }}
+            {move || {
+                match reset_password_value.get() {
+                    Some(response) => {
+                        match response {
+                            Ok(_) => view! {}.into_view(),
+                            Err(server_err) => {
+                                view! { <p>{format!("{}", server_err.to_string())}</p> }.into_view()
+                            }
+                        }
+                    }
+                    None => view! {}.into_view(),
+                }
+            }}
         </div>
     }
 }
@@ -180,6 +277,9 @@ fn Auth() -> impl IntoView {
                     None => view! {}.into_view(),
                 }
             }}
+            <A class="btn btn-primary" href="/forgotpassword">
+                "Forgot Password?"
+            </A>
 
         </div>
     }

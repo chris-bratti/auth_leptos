@@ -3,7 +3,8 @@ use std::fmt;
 use crate::{auth::UserInfo, User};
 
 use super::users_db::{
-    create_db_user, delete_db_user, get_user_from_username, update_db_password, update_db_username,
+    create_db_user, delete_db_user, get_user_from_username, save_reset_link_to_db,
+    update_db_password, update_db_username,
 };
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
@@ -19,6 +20,25 @@ pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> 
 
     match db_user {
         Some(user) => Ok(user.pass_hash),
+        None => Err(DBError::NotFound(username.clone())),
+    }
+}
+
+pub fn get_reset_hash(username: &String) -> Result<Option<String>, DBError> {
+    let db_user =
+        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    // Logic in here to determine if the link has expired
+
+    match db_user {
+        Some(user) => {
+            let expiry = user.reset_link_expiration.expect("No expiration date!");
+            let time_elapsed = expiry.elapsed().expect("Error parsing time!");
+            if time_elapsed.as_secs_f32() > 1200f32 {
+                return Err(DBError::Error("Token expired".to_string()));
+            }
+            Ok(user.reset_link)
+        }
         None => Err(DBError::NotFound(username.clone())),
     }
 }
@@ -84,9 +104,18 @@ pub fn delete_user(username: &String) -> Result<(), DBError> {
     Ok(())
 }
 
+pub fn save_reset(username: &String, reset_link: &String) -> Result<(), DBError> {
+    if !does_user_exist(username)? {
+        return Err(DBError::NotFound(username.clone()));
+    }
+
+    save_reset_link_to_db(username, reset_link).map_err(|err| DBError::InternalServerError(err))
+}
+
 pub enum DBError {
     NotFound(String),
     InternalServerError(diesel::result::Error),
+    Error(String),
 }
 
 // Implement std::fmt::Display for AppError
@@ -98,6 +127,9 @@ impl fmt::Display for DBError {
             }
             DBError::InternalServerError(_diesel_error) => {
                 write!(f, "There was an error on our side :(")
+            }
+            DBError::Error(msg) => {
+                write!(f, "{msg}")
             }
         }
     }
@@ -112,6 +144,9 @@ impl fmt::Debug for DBError {
             }
             DBError::InternalServerError(diesel_error) => {
                 write!(f, "Diesel error: {}", diesel_error)
+            }
+            DBError::Error(msg) => {
+                write!(f, "{msg}")
             }
         }
     }
