@@ -106,6 +106,8 @@ fn verify_reset_link(username: &String, reset_link: &String) -> Result<bool, Ser
 
 fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
 
+    // TODO: Two DB calls for one transaction is a little gross - will want to slim this down to one call
+
     let encrypted_email = crate::db::db_helper::get_user_email(&username).map_err(|_| ServerFnError::new("Error fetching user"))?;
 
     let user = crate::db::db_helper::find_user_by_username(&username).map_err(|_| ServerFnError::new("Error fetching user"))?;
@@ -114,7 +116,7 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let user_email = decrypt_email(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
-    smtp::send_email(&user_email, generate_reset_email_body(username, reset_token), &name);
+    smtp::send_email(&user_email, generate_reset_email_body(reset_token, &name), &name);
 
     Ok(())
 }
