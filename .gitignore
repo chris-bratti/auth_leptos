@@ -13,4 +13,5 @@ end2end/playwright-report/
 playwright/.cache/
 
 .env
-.smtp
+
+rustc-ice-*

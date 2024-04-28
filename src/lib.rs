@@ -4,6 +4,8 @@ pub mod app;
 pub mod auth;
 #[cfg(feature = "ssr")]
 pub mod db;
+#[cfg(feature = "ssr")]
+pub mod server;
 pub mod smtp;
 
 #[cfg(feature = "hydrate")]

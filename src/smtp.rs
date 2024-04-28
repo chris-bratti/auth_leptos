@@ -1,6 +1,4 @@
 #[cfg(feature = "ssr")]
-use dotenvy::dotenv;
-#[cfg(feature = "ssr")]
 use lettre::message::header::{self};
 #[cfg(feature = "ssr")]
 use lettre::message::{MultiPart, SinglePart};
@@ -10,8 +8,6 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
 #[cfg(feature = "ssr")]
 use maud::html;
-#[cfg(feature = "ssr")]
-use std::env;
 
 #[cfg(feature = "ssr")]
 pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> String {
@@ -75,10 +71,10 @@ pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> S
 
 #[cfg(feature = "ssr")]
 pub fn send_email(email: &String, email_body: String, first_name: &String) {
-    dotenv().ok();
+    use crate::server::helpers::get_env_variable;
 
-    let from_email = env::var("FROM_EMAIL").expect("FROM_EMAIL must be set");
-    let smtp_key = env::var("KEY").expect("KEY must be set");
+    let from_email = get_env_variable("FROM_EMAIL").expect("FROM_EMAIL is unset!");
+    let smtp_key = get_env_variable("KEY").expect("KEY must be set");
     let email = Message::builder()
         .from(format!("Leptos Auth <{from_email}>").parse().unwrap())
         .to(format!("{first_name} <{email}>").parse().unwrap())

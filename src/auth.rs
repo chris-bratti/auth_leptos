@@ -17,8 +17,6 @@ use argon2::{
     Argon2,
 };
 use cfg_if::cfg_if;
-#[cfg(feature = "ssr")]
-use dotenvy::dotenv;
 use leptos::*;
 
 #[cfg(feature = "ssr")]
@@ -27,6 +25,8 @@ use crate::db::db_helper::create_user;
 use crate::db::db_helper::does_user_exist;
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::find_user_by_username;
+#[cfg(feature = "ssr")]
+use crate::server::helpers::get_env_variable;
 #[cfg(feature = "ssr")]
 use crate::smtp::{self, generate_reset_email_body};
 #[cfg(feature = "ssr")]
@@ -122,9 +122,8 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 }
 
 fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
-    dotenv().ok();
 
-    let encryption_key = env::var("ENCRYPTION_KEY").expect("ENCRYPTION_KEY must be set");
+    let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
 
     let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
 
@@ -144,9 +143,8 @@ fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
 }
 
 fn decrypt_email(encrypted_email: String) -> Result<String, aes_gcm::Error> {
-    dotenv().ok();
 
-    let encryption_key = env::var("ENCRYPTION_KEY").expect("ENCRYPTION_KEY must be set");
+    let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
 
     let encrypted_data = hex::decode(encrypted_email)
         .expect("failed to decode hex string into vec");
