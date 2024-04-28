@@ -23,6 +23,11 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: rec_temp
+          
+      - name: Init env file
+        run: |
+          echo "ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
+        working-directory: rec_temp
 
       - name: Install postgres (Linux)
         run: |
@@ -52,4 +57,9 @@ jobs:
         
       - name: Test
         run: cargo test --verbose --features ssr
+        working-directory: rec_temp
+
+      - name: Clleanup
+        run: |
+          rm -rf .env
         working-directory: rec_temp
