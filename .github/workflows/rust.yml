@@ -37,15 +37,15 @@ jobs:
 
       - name: Install diesel
         run: cargo install diesel_cli
-        working-directory: rec-temp
+        working-directory: rec_temp
 
       - name: Diesel setup
         run: diesel setup
-        working-directory: rec-temp
+        working-directory: rec_temp
 
       - name: Diesel migration
         run: diesel migration run
-        working-directory: rec-temp
+        working-directory: rec_temp
 
       - name: Build 
         run: cargo build --verbose
