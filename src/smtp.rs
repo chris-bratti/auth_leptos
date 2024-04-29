@@ -74,7 +74,7 @@ pub fn send_email(email: &String, email_body: String, first_name: &String) {
     use crate::server::helpers::get_env_variable;
 
     let from_email = get_env_variable("FROM_EMAIL").expect("FROM_EMAIL is unset!");
-    let smtp_key = get_env_variable("KEY").expect("KEY must be set");
+    let smtp_key = get_env_variable("SMTP_KEY").expect("SMTP_KEY must be set");
     let email = Message::builder()
         .from(format!("Leptos Auth <{from_email}>").parse().unwrap())
         .to(format!("{first_name} <{email}>").parse().unwrap())
