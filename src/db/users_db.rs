@@ -1,5 +1,5 @@
-use crate::db::models::{DBUser, NewDBUser};
-use crate::db::schema;
+use crate::db::models::{DBResetToken, DBUser, DBVerificationToken, NewDBResetToken, NewDBUser};
+use crate::db::schema::{self, password_reset_tokens};
 use diesel::pg::PgConnection;
 use diesel::{prelude::*, select};
 use dotenvy::dotenv;
@@ -24,6 +24,7 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         username: &user_info.username,
         pass_hash: &user_info.pass_hash,
         email: &user_info.email,
+        verified: &false,
     };
 
     println!("{:#?}", new_user);
@@ -34,7 +35,32 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         .get_result(&mut conn)
 }
 
-pub fn save_reset_link_to_db(uname: &String, rlink: &String) -> Result<(), diesel::result::Error> {
+pub fn get_reset_token_from_db(
+    uname: &String,
+) -> Result<Option<DBResetToken>, diesel::result::Error> {
+    use schema::users::dsl::*;
+
+    let mut connection = establish_connection();
+
+    let db_user = users
+        .filter(username.eq(uname))
+        .select(DBUser::as_select())
+        .get_result(&mut connection)?;
+
+    // get pages for a book
+    let pass_reset_token = DBResetToken::belonging_to(&db_user)
+        .limit(1)
+        .select(DBResetToken::as_select())
+        .first(&mut connection)
+        .optional()?;
+
+    Ok(pass_reset_token)
+}
+
+pub fn save_reset_token_to_db(
+    uname: &String,
+    rtoken: &String,
+) -> Result<(), diesel::result::Error> {
     use schema::users::dsl::*;
 
     let mut connection = establish_connection();
@@ -42,16 +68,32 @@ pub fn save_reset_link_to_db(uname: &String, rlink: &String) -> Result<(), diese
     let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
 
     // Gets 20 minutes from current time
-    let link_expiry = now
+    let token_expiry = now
         .checked_add(Duration::new(1200, 0))
         .expect("Error parsing time");
 
-    diesel::update(users.filter(username.eq(uname)))
-        .set((reset_link_expiration.eq(link_expiry), reset_link.eq(rlink)))
-        .returning(DBUser::as_returning())
-        .get_result(&mut connection)?;
+    let db_user: Option<DBUser> = users
+        .filter(username.eq(uname))
+        .limit(1)
+        .select(DBUser::as_select())
+        .first(&mut connection)
+        .optional()?;
 
-    Ok(())
+    match db_user {
+        Some(user) => {
+            let db_reset_token = NewDBResetToken {
+                reset_token: rtoken,
+                reset_token_expiry: &token_expiry,
+                user_id: &user.id,
+            };
+            diesel::insert_into(password_reset_tokens::table)
+                .values(&db_reset_token)
+                .returning(DBResetToken::as_returning())
+                .get_result(&mut connection)?;
+            Ok(())
+        }
+        None => Err(diesel::result::Error::NotFound),
+    }
 }
 
 pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::result::Error> {
@@ -93,23 +135,6 @@ pub fn update_db_password(
         .get_result(&mut connection)
 }
 
-pub fn show_users(connection: &mut PgConnection) {
-    use schema::users::dsl::*;
-    let results = users
-        //.filter(published.eq(true))
-        .limit(5)
-        .select(DBUser::as_select())
-        .load(connection)
-        .expect("Error loading users");
-
-    println!("Displaying {} users", results.len());
-    for user in results {
-        println!("{}", user.username);
-        println!("{}", user.first_name);
-        println!("{}", user.last_name);
-    }
-}
-
 pub fn delete_db_user(uname: &String) -> Result<usize, diesel::result::Error> {
     use schema::users::dsl::*;
 
@@ -131,7 +156,7 @@ pub mod test_db {
     use super::create_db_user;
 
     #[test]
-    fn test_crud() {
+    fn test_user_crud() {
         let user_info = UserInfo {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),

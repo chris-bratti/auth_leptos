@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use crate::db::schema::*;
 use diesel::prelude::*;
 
-#[derive(Queryable, Selectable, Debug)]
+#[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = crate::db::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DBUser {
@@ -13,8 +13,43 @@ pub struct DBUser {
     pub username: String,
     pub email: String,
     pub pass_hash: String,
-    pub reset_link: Option<String>,
-    pub reset_link_expiration: Option<SystemTime>,
+    pub verified: bool,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
+#[diesel(table_name = password_reset_tokens)]
+#[diesel(belongs_to(DBUser, foreign_key = user_id))]
+pub struct DBResetToken {
+    pub user_id: i32,
+    pub id: i32,
+    pub reset_token: String,
+    pub reset_token_expiry: SystemTime,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
+#[diesel(table_name = verification_tokens)]
+#[diesel(belongs_to(DBUser, foreign_key = user_id))]
+pub struct DBVerificationToken {
+    pub user_id: i32,
+    pub id: i32,
+    pub confirm_token: String,
+    pub confirm_token_expiry: SystemTime,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = verification_tokens)]
+pub struct NewDBVerificationToken<'a> {
+    pub confirm_token: &'a str,
+    pub confirm_token_expiry: &'a SystemTime,
+    pub user_id: &'a i32,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = password_reset_tokens)]
+pub struct NewDBResetToken<'a> {
+    pub reset_token: &'a str,
+    pub reset_token_expiry: &'a SystemTime,
+    pub user_id: &'a i32,
 }
 
 #[derive(Insertable, Debug)]
@@ -25,4 +60,5 @@ pub struct NewDBUser<'a> {
     pub username: &'a str,
     pub email: &'a str,
     pub pass_hash: &'a str,
+    pub verified: &'a bool,
 }

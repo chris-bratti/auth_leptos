@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use crate::{auth::UserInfo, User};
 
 use super::users_db::{
-    create_db_user, delete_db_user, get_user_from_username, save_reset_link_to_db,
-    update_db_password, update_db_username,
+    create_db_user, delete_db_user, get_reset_token_from_db, get_user_from_username,
+    save_reset_token_to_db, update_db_password, update_db_username,
 };
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
@@ -26,15 +26,13 @@ pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> 
     }
 }
 
-pub fn get_reset_hash(username: &String) -> Result<Option<String>, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+pub fn get_reset_hash(username: &String) -> Result<String, DBError> {
+    let rest_token =
+        get_reset_token_from_db(username).map_err(|err| DBError::InternalServerError(err))?;
 
-    // Logic in here to determine if the link has expired
-
-    match db_user {
-        Some(user) => {
-            let expiry = user.reset_link_expiration.expect("No expiration date!");
+    match rest_token {
+        Some(token) => {
+            let expiry = token.reset_token_expiry;
             let timestamp: DateTime<Utc> = DateTime::from(expiry);
 
             // Get the current time
@@ -46,7 +44,7 @@ pub fn get_reset_hash(username: &String) -> Result<Option<String>, DBError> {
             if time_until_expiry >= 0 {
                 return Err(DBError::Error("Token expired".to_string()));
             }
-            Ok(user.reset_link)
+            Ok(token.reset_token)
         }
         None => Err(DBError::NotFound(username.clone())),
     }
@@ -113,12 +111,12 @@ pub fn delete_user(username: &String) -> Result<(), DBError> {
     Ok(())
 }
 
-pub fn save_reset(username: &String, reset_link: &String) -> Result<(), DBError> {
+pub fn save_reset(username: &String, reset_token: &String) -> Result<(), DBError> {
     if !does_user_exist(username)? {
         return Err(DBError::NotFound(username.clone()));
     }
 
-    save_reset_link_to_db(username, reset_link).map_err(|err| DBError::InternalServerError(err))
+    save_reset_token_to_db(username, reset_token).map_err(|err| DBError::InternalServerError(err))
 }
 
 pub fn get_user_email(username: &String) -> Result<String, DBError> {

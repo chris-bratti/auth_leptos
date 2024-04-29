@@ -93,7 +93,6 @@ fn ResetPassword() -> impl IntoView {
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
             <h1>Reset Password</h1>
-            {move || view! { <p>{generated_id()}</p> }}
             <ActionForm
                 on:submit=move |ev| {
                     let data = PasswordReset::from_event(&ev);
@@ -118,7 +117,7 @@ fn ResetPassword() -> impl IntoView {
                 <input
                     class="form-control"
                     type="hidden"
-                    name="password_link"
+                    name="reset_token"
                     value=move || generated_id()
                 />
                 <div class="mb-3">

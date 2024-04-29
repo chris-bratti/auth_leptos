@@ -79,29 +79,24 @@ fn check_valid_password(password: &String) -> bool{
     valid && password.len() >= 8 && password.len() <= 16
 }
 
-fn generate_password_reset_link() -> Result<String, ServerFnError> {
+fn generate_password_reset_token() -> Result<String, ServerFnError> {
     use rand::{thread_rng, Rng};
     use rand::distributions::{Alphanumeric};
 
     let mut rng = thread_rng();
 
-    let generated_link_path: String = (&mut rng).sample_iter(Alphanumeric)
+    let generated_token: String = (&mut rng).sample_iter(Alphanumeric)
         .take(32)
         .map(char::from)
         .collect();
 
-    Ok(generated_link_path)
+    Ok(generated_token)
 }
 
-fn verify_reset_link(username: &String, reset_link: &String) -> Result<bool, ServerFnError> {
-    let link_hash = crate::db::db_helper::get_reset_hash(username).map_err(|_| ServerFnError::new("Unable to get user link"))?;
+fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, ServerFnError> {
+    let token_hash = crate::db::db_helper::get_reset_hash(username).map_err(|_| ServerFnError::new("Unable to find reset token"))?;
 
-    match link_hash {
-        Some(hash) => {
-            verify_password(reset_link, &hash).map_err(|_| ServerFnError::new("Error validation hash"))
-        },
-        None => Err(ServerFnError::new("User hash not found or has expired"))
-    }
+    verify_password(reset_token, &token_hash).map_err(|_| ServerFnError::new("Error validation hash"))
 }
 
 fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
@@ -284,6 +279,8 @@ pub async fn signup(
         Err(_err) => return Err(ServerFnError::new("Internal server error")),
     }
 
+    // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
+
     // Hash password
     let pass_hash = hash_password(password).expect("Error hashing password");
 
@@ -366,18 +363,18 @@ pub async fn change_password(
 #[server(PasswordReset, "/api")]
 pub async fn reset_password(
     username: String,
-    password_link: String,
+    reset_token: String,
     new_password: String,
     confirm_password: String,
 ) -> Result<(), ServerFnError> {
     println!("Requesting to reset password");
-    // Verify reset link
-    let link_verification = verify_reset_link(&username, &password_link)?;
+    // Verify reset token
+    let token_verification = verify_reset_token(&username, &reset_token)?;
 
-    // If link does not match or is no longer valid, return
-    if !link_verification {
+    // If token does not match or is no longer valid, return
+    if !token_verification {
         return Err(ServerFnError::new(
-            "Error validation link. Link may be expired. Please try again",
+            "Error validation token. Token may be expired. Please try again",
         ));
     }
 
@@ -419,19 +416,19 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
     // Redirects user home
     leptos_actix::redirect("/");
 
-    // Generate random 32 bit reset link path
-    let generated_link = generate_password_reset_link()?;
+    // Generate random 32 bit reset token path
+    let generated_token = generate_password_reset_token()?;
 
-    // Hash link
-    let reset_token = hash_password(generated_link.clone())
+    // Hash token
+    let reset_token = hash_password(generated_token.clone())
         .map_err(|_| ServerFnError::new("Internal server error"))?;
 
-    // Save link hash to DB
+    // Save token hash to DB
     crate::db::db_helper::save_reset(&username, &reset_token)
         .map_err(|_| ServerFnError::new("Internal server error"))?;
 
     // SMTP send email
-    send_reset_email(&username, &generated_link).expect("Error sending email");
+    send_reset_email(&username, &generated_token).expect("Error sending email");
 
     Ok(())
 }
