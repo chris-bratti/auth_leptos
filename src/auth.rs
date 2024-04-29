@@ -28,7 +28,7 @@ use crate::db::db_helper::find_user_by_username;
 #[cfg(feature = "ssr")]
 use crate::server::helpers::get_env_variable;
 #[cfg(feature = "ssr")]
-use crate::smtp::{self, generate_reset_email_body};
+use crate::smtp::{self, generate_reset_email_body, generate_welcome_email_body};
 #[cfg(feature = "ssr")]
 use actix_session::Session;
 #[cfg(feature = "ssr")]
@@ -116,7 +116,7 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let user_email = decrypt_email(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
-    smtp::send_email(&user_email, generate_reset_email_body(reset_token, &name), &name);
+    smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name);
 
     Ok(())
 }
@@ -292,7 +292,7 @@ pub async fn signup(
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
-        first_name,
+        first_name: first_name.clone(),
         last_name,
         pass_hash,
         email: encrypted_email,
@@ -301,6 +301,13 @@ pub async fn signup(
     // Creates DB user
     let user =
         create_user(user_info).map_err(|_err| ServerFnError::new("Unable to create user"))?;
+
+    smtp::send_email(
+        &email,
+        "Welcome!".to_string(),
+        generate_welcome_email_body(&first_name),
+        &first_name,
+    );
 
     // Saving user to current session to stay logged in
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
