@@ -70,7 +70,8 @@ pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> S
 }
 
 #[cfg(feature = "ssr")]
-pub fn generate_welcome_email_body(first_name: &String) -> String {
+pub fn generate_welcome_email_body(first_name: &String, verification_token: &String) -> String {
+    let verification_link = format!("http://localhost:3000/verify/{}", verification_token);
     // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
     html! {
         head {
@@ -115,6 +116,10 @@ pub fn generate_welcome_email_body(first_name: &String) -> String {
                 h1 {"Welcome!"}
                 p{ "Hi " (first_name) "!"}
                 p{"Welcome to Leptos Auth. Its great having you!"}
+                p{"Click the link below to confirm your email!"}
+                a class="btn" href={ (verification_link) } {
+                    "Confirm Email"
+                }
             }
         }
     }

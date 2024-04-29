@@ -351,6 +351,8 @@ fn Auth() -> impl IntoView {
 fn UserPage() -> impl IntoView {
     // Calls server function to retrieve User object from username currently stored in session
     let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
+    let check_verification = create_server_action::<IsUserVerified>();
+    let checking_verification = check_verification.pending();
     let loading = user_result.loading();
     let user_signal: RwSignal<Option<User>> = create_rw_signal(None);
     let (update_password, set_update_password) = create_signal(false);
@@ -367,7 +369,10 @@ fn UserPage() -> impl IntoView {
                                 match user_result.get() {
                                     Some(user_result) => {
                                         match user_result {
-                                            Ok(user) => Some(user),
+                                            Ok(user) => {
+                                                check_verification.dispatch(IsUserVerified{username: user.username.clone()});
+                                                Some(user)
+                                            },
                                             Err(_err) => None,
                                         }
                                     }
@@ -379,27 +384,45 @@ fn UserPage() -> impl IntoView {
                             Some(user) => {
                                 view! {
                                     {move || {
-                                        if update_password.get() {
+                                        if checking_verification(){
+                                            view! { <p>Loading...</p> }.into_view()
+                                        }else{
+                                            let user_verified = check_verification.value().get().expect("Error verifying").expect("Could not verify user");
                                             view! {
-                                                // let username = user.username;
-                                                <ChangePassword username=user.username.clone()/>
-                                            }
-                                                .into_view()
-                                        } else {
-                                            view! {
-                                                // let username = user.username;
-                                                <button
-                                                    class="btn btn-primary"
-                                                    on:click=move |_| set_update_password(true)
-                                                >
-                                                    Update Password
-                                                </button>
-                                            }
-                                                .into_view()
+                                                {move|| {
+                                                    if user_verified {
+                                                        view! {}.into_view()
+                                                    }else{
+                                                        view! {
+                                                            {move || {
+                                                                if update_password.get() {
+                                                                    view! {
+                                                                        // let username = user.username;
+                                                                        <p>What ever</p>
+                                                                    }
+                                                                        .into_view()
+                                                                } else{
+                                                                    view! {
+                                                                        // let username = user.username;
+                                                                        <button
+                                                                            class="btn btn-primary"
+                                                                            on:click=move |_| set_update_password(true)
+                                                                        >
+                                                                            Update Password
+                                                                        </button>
+                                                                    }
+                                                                        .into_view()
+                                                                }
+                                                            }}
+                                                        }.into_view()
+                                                    }
+                                                }}
+
+                                            }.into_view()
                                         }
                                     }}
-                                }
-                                    .into_view()
+                                }.into_view()
+
                             }
                         }
                     }
@@ -409,6 +432,34 @@ fn UserPage() -> impl IntoView {
         </div>
     }
 }
+
+/*
+view! {
+                                                {if verified {
+                                                    view! {{move || {
+                                                        if update_password.get() {
+                                                            view! {
+                                                                // let username = user.username;
+                                                                <ChangePassword username=user.username.clone()/>
+                                                            }
+                                                                .into_view()
+                                                        } else {
+                                                            view! {
+                                                                // let username = user.username;
+                                                                <button
+                                                                    class="btn btn-primary"
+                                                                    on:click=move |_| set_update_password(true)
+                                                                >
+                                                                    Update Password
+                                                                </button>
+                                                            }
+                                                                .into_view()
+                                                        }
+                                                    }}}.into_view()
+                                                }else{
+                                                    view! {<NotLoggedIn/>}.into_view()
+                                                }}.into_view()
+                                            }.into_view() */
 
 #[component]
 fn ChangePassword(username: String) -> impl IntoView {
