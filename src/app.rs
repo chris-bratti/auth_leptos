@@ -1,5 +1,5 @@
 use crate::{auth::*, User};
-use leptos::*;
+use leptos::{svg::View, *};
 use leptos_meta::*;
 use leptos_router::*;
 
@@ -31,6 +31,8 @@ pub fn App() -> impl IntoView {
                     <Route path="/login" view=Auth/>
                     <Route path="/forgotpassword" view=ForgotPassword/>
                     <Route path="/reset/:generated_id" view=ResetPassword/>
+                    <Route path="/verify/:generated_id" view=Verify/>
+                    <Route path="/example" view=ExamplePage/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>
@@ -106,6 +108,7 @@ fn ResetPassword() -> impl IntoView {
                         }
                     }
                 }
+
                 action=reset_password
             >
                 <div class="mb-3">
@@ -169,6 +172,64 @@ fn ResetPassword() -> impl IntoView {
                         }
                     }
                     None => view! {}.into_view(),
+                }
+            }}
+
+        </div>
+    }
+}
+
+#[component]
+fn Verify() -> impl IntoView {
+    let params = use_params_map();
+    let generated_id =
+        move || params.with(|params| params.get("generated_id").cloned().unwrap_or_default());
+
+    let verify_user = create_server_action::<VerifyUser>();
+    let validation_result = verify_user.value();
+    let pending = verify_user.pending();
+
+    view! {
+        <div style:font-family="sans-serif" style:text-align="center">
+            {move || {
+                if !pending() {
+                    if validation_result.get().is_some() {
+                        view! {
+                            <h1>There was an error verifying your account</h1>
+                            <p>Your verification link could have expired. Try resending</p>
+                        }
+                            .into_view()
+                    } else {
+                        view! {
+                            <ActionForm action=verify_user>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        "Username"
+                                        <input
+                                            class="form-control"
+                                            type="text"
+                                            name="username"
+                                            required=true
+                                        />
+                                    </label>
+                                </div>
+                                <input
+                                    class="form-control"
+                                    type="hidden"
+                                    name="verification_token"
+                                    value=generated_id()
+                                />
+                                <input
+                                    class="btn btn-primary"
+                                    type="submit"
+                                    value="Request Password Reset"
+                                />
+                            </ActionForm>
+                        }
+                            .into_view()
+                    }
+                } else {
+                    view! { <h1>Verifying...</h1> }.into_view()
                 }
             }}
 
@@ -348,6 +409,42 @@ fn Auth() -> impl IntoView {
 }
 
 #[component]
+pub fn LoggedIn<F>(fallback: F, children: Children) -> impl IntoView
+where
+    F: IntoView,
+{
+    let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
+    let check_verification = create_server_action::<IsUserVerified>();
+    let checking_verification = check_verification.pending();
+    let loading = user_result.loading();
+    let user_signal: RwSignal<Option<User>> = create_rw_signal(None);
+    //let fallback = store_value(fallback);
+
+    //let children = store_value(children);
+    let user_is_verified = move || user_result.get().is_some();
+    view! {
+      <Show
+        when=user_is_verified
+        fallback=|| view! { <p>"Hello"</p> }
+      >
+       <p>"Hello darling"</p>
+      </Show>
+    }
+}
+
+#[component]
+pub fn ExamplePage() -> impl IntoView {
+    let fallback = view! {<p>This is the fallback</p>};
+    let children = view! {<p>This is the main view. I guess user has been verified?</p>};
+
+    view! {
+        <LoggedIn fallback=fallback>
+            {children}
+        </LoggedIn>
+    }
+}
+
+#[component]
 fn UserPage() -> impl IntoView {
     // Calls server function to retrieve User object from username currently stored in session
     let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
@@ -370,96 +467,86 @@ fn UserPage() -> impl IntoView {
                                     Some(user_result) => {
                                         match user_result {
                                             Ok(user) => {
-                                                check_verification.dispatch(IsUserVerified{username: user.username.clone()});
+                                                check_verification
+                                                    .dispatch(IsUserVerified {
+                                                        username: user.username.clone(),
+                                                    });
                                                 Some(user)
-                                            },
+                                            }
                                             Err(_err) => None,
                                         }
                                     }
                                     None => None,
                                 },
                             );
-                        match user_signal.get() {
-                            None => view! { <NotLoggedIn/> }.into_view(),
-                            Some(user) => {
-                                view! {
-                                    {move || {
-                                        if checking_verification(){
-                                            view! { <p>Loading...</p> }.into_view()
-                                        }else{
-                                            let user_verified = check_verification.value().get().expect("Error verifying").expect("Could not verify user");
-                                            view! {
-                                                {move|| {
-                                                    if user_verified {
-                                                        view! {}.into_view()
-                                                    }else{
-                                                        view! {
-                                                            {move || {
-                                                                if update_password.get() {
-                                                                    view! {
-                                                                        // let username = user.username;
-                                                                        <p>What ever</p>
-                                                                    }
-                                                                        .into_view()
-                                                                } else{
-                                                                    view! {
-                                                                        // let username = user.username;
-                                                                        <button
-                                                                            class="btn btn-primary"
-                                                                            on:click=move |_| set_update_password(true)
-                                                                        >
-                                                                            Update Password
-                                                                        </button>
-                                                                    }
-                                                                        .into_view()
+                        view! {
+                            {move || {
+                                match user_signal.get() {
+                                    None => view! { <NotLoggedIn/> }.into_view(),
+                                    Some(_) => {
+                                        view! {
+                                            {move || {
+                                                if checking_verification() {
+                                                    view! { <p>Loading...</p> }.into_view()
+                                                } else {
+                                                    let user_verified = check_verification
+                                                        .value()
+                                                        .get()
+                                                        .expect("Error verifying")
+                                                        .expect("Could not verify user");
+                                                    view! {
+                                                        {move || {
+                                                            if !user_verified {
+                                                                view! {
+                                                                    <h1>Your email is not verified</h1>
+                                                                    <p>
+                                                                        Please follow the link we sent to your inbox to verify your email!
+                                                                    </p>
                                                                 }
-                                                            }}
-                                                        }.into_view()
+                                                                    .into_view()
+                                                            } else {
+                                                                view! {
+                                                                    {move || {
+                                                                        if update_password.get() {
+                                                                            view! { <p>Whatever</p> }.into_view()
+                                                                        } else {
+                                                                            view! {
+                                                                                // let username = user.username;
+                                                                                <button
+                                                                                    class="btn btn-primary"
+                                                                                    on:click=move |_| set_update_password(true)
+                                                                                >
+                                                                                    Update Password
+                                                                                </button>
+                                                                            }
+                                                                                .into_view()
+                                                                        }
+                                                                    }}
+                                                                }
+                                                                    .into_view()
+                                                            }
+                                                        }}
                                                     }
-                                                }}
-
-                                            }.into_view()
+                                                        .into_view()
+                                                }
+                                            }}
                                         }
-                                    }}
-                                }.into_view()
-
-                            }
+                                            .into_view()
+                                    }
+                                }
+                            }}
                         }
+                            .into_view()
                     }
                 }
             }}
 
         </div>
+        <A class="btn btn-primary" href="/example">
+                "Example"
+        </A>
     }
 }
-
-/*
-view! {
-                                                {if verified {
-                                                    view! {{move || {
-                                                        if update_password.get() {
-                                                            view! {
-                                                                // let username = user.username;
-                                                                <ChangePassword username=user.username.clone()/>
-                                                            }
-                                                                .into_view()
-                                                        } else {
-                                                            view! {
-                                                                // let username = user.username;
-                                                                <button
-                                                                    class="btn btn-primary"
-                                                                    on:click=move |_| set_update_password(true)
-                                                                >
-                                                                    Update Password
-                                                                </button>
-                                                            }
-                                                                .into_view()
-                                                        }
-                                                    }}}.into_view()
-                                                }else{
-                                                    view! {<NotLoggedIn/>}.into_view()
-                                                }}.into_view()
-                                            }.into_view() */
 
 #[component]
 fn ChangePassword(username: String) -> impl IntoView {
@@ -489,6 +576,7 @@ fn ChangePassword(username: String) -> impl IntoView {
                         }
                     }
                 }
+
                 action=update_password
             >
                 <input class="form-control" type="hidden" name="username" value=username/>

@@ -120,14 +120,14 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let name = user.expect("No user present!").first_name;
 
-    let user_email = decrypt_email(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
+    let user_email = decrypt_string(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
     smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name);
 
     Ok(())
 }
 
-fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
+fn encrypt_string(data: &String) -> Result<String, aes_gcm::Error> {
 
     let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
 
@@ -135,7 +135,7 @@ fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
 
     let cipher = Aes256Gcm::new(&key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
-    let ciphertext = cipher.encrypt(&nonce, email.as_bytes())?;
+    let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
 
     //let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())?;
 
@@ -144,15 +144,14 @@ fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
 
 
     let output = hex::encode(encrypted_data);
-    println!("{}", output);
     Ok(output)
 }
 
-fn decrypt_email(encrypted_email: String) -> Result<String, aes_gcm::Error> {
+fn decrypt_string(encrypted: String) -> Result<String, aes_gcm::Error> {
 
     let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
 
-    let encrypted_data = hex::decode(encrypted_email)
+    let encrypted_data = hex::decode(encrypted)
         .expect("failed to decode hex string into vec");
 
     let key = Key::<Aes256Gcm>::from_slice(encryption_key.as_bytes());
@@ -295,7 +294,7 @@ pub async fn signup(
     // Hash password
     let pass_hash = hash_string(password).expect("Error hashing password");
 
-    let encrypted_email = encrypt_email(&email).expect("Error encrypting email");
+    let encrypted_email = encrypt_string(&email).expect("Error encrypting email");
 
     // Create user info to interact with DB
     let user_info = UserInfo {
@@ -462,6 +461,7 @@ pub async fn verify_user(
     username: String,
     verification_token: String,
 ) -> Result<(), ServerFnError> {
+    println!("Attempting to verify user");
     // Verify reset token
     let token_verification = verify_confirmation_token(&username, &verification_token)?;
 
@@ -473,9 +473,14 @@ pub async fn verify_user(
     }
 
     set_user_as_verified(&username)
-        .map_err(|_| ServerFnError::new("Error verifying user. Please contact us"))?;
+        .map_err(|_| ServerFnError::new("Error verifying user. Please contact us"))
+        .expect("Error setting user as verified");
 
-    remove_verification_token(&username).map_err(|err| ServerFnError::new(err.to_string()))
+    remove_verification_token(&username).map_err(|err| ServerFnError::new(err.to_string()))?;
+
+    leptos_actix::redirect("/login");
+
+    Ok(())
 }
 
 #[server(IsUserVerified, "/api")]
@@ -490,9 +495,9 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
 #[cfg(test)]
 mod test_auth {
 
-    use crate::auth::{check_valid_password, decrypt_email, verify_hash};
+    use crate::auth::{check_valid_password, decrypt_string, verify_hash};
 
-    use super::{encrypt_email, hash_string};
+    use super::{encrypt_string, hash_string};
 
     #[test]
     fn test_password_hashing() {
@@ -516,12 +521,12 @@ mod test_auth {
     #[test]
     fn test_email_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email = encrypt_email(&email).expect("There was an error encrypting");
+        let encrypted_email = encrypt_string(&email).expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
         let decrypted_email =
-            decrypt_email(encrypted_email).expect("There was an error decrypting");
+            decrypt_string(encrypted_email).expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
     }

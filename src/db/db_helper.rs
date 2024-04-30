@@ -10,7 +10,9 @@ use super::{
         create_db_user, delete_db_user, get_user_from_username, set_db_user_as_verified,
         update_db_password, update_db_username,
     },
-    verification_tokens_table::{delete_db_verification_token, get_verification_token_from_db},
+    verification_tokens_table::{
+        delete_db_verification_token, get_verification_token_from_db, save_verification_token_to_db,
+    },
 };
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
@@ -176,7 +178,7 @@ pub fn save_reset(username: &String, reset_token: &String) -> Result<(), DBError
 }
 
 pub fn save_verification(username: &String, verification_token: &String) -> Result<(), DBError> {
-    save_reset_token_to_db(username, verification_token)
+    save_verification_token_to_db(username, verification_token)
         .map_err(|err| DBError::InternalServerError(err))
 }
 
