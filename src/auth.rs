@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, fmt, str::FromStr};
 
 #[cfg(feature = "ssr")]
 use actix_identity::Identity;
@@ -43,6 +43,75 @@ use serde::Deserialize;
 #[cfg(feature = "ssr")]
 use serde::Serialize;
 
+#[derive(Clone)]
+pub enum AuthError {
+    InvalidCredentials,
+    InternalServerError(String),
+    InvalidToken,
+    PasswordConfirmationError,
+    InvalidPassword,
+    Error(String),
+}
+
+// Implement std::fmt::Display for AppError
+impl fmt::Display for AuthError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AuthError::InvalidCredentials => {
+                write!(f, "Invalid username or password")
+            }
+            AuthError::InternalServerError(_error) => {
+                write!(f, "There was an error on our side :(")
+            }
+            AuthError::InvalidToken => {
+                write!(f, "Token invalid or expired")
+            }
+            AuthError::Error(msg) => {
+                write!(f, "{msg}")
+            }
+            AuthError::PasswordConfirmationError => {
+                write!(f, "Passwords do not match!")
+            }
+            AuthError::InvalidPassword => {
+                write!(f, "Password does not meet minimum requirements!")
+            }
+        }
+    }
+}
+
+// Implement std::fmt::Debug for AppError
+impl fmt::Debug for AuthError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AuthError::InvalidCredentials => {
+                write!(f, "Invalid login attempt")
+            }
+            AuthError::InternalServerError(error) => {
+                write!(f, "Internal error: {}", error)
+            }
+            AuthError::InvalidToken => {
+                write!(f, "Invalid token attempt")
+            }
+            AuthError::Error(msg) => {
+                write!(f, "{msg}")
+            }
+            AuthError::PasswordConfirmationError => {
+                write!(f, "Passwords do not match!")
+            }
+            AuthError::InvalidPassword => {
+                write!(f, "Password does not meet minimum requirements!")
+            }
+        }
+    }
+}
+
+impl FromStr for AuthError {
+    type Err = AuthError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(AuthError::Error(s.to_string()))
+    }
+}
+
 cfg_if! {
     if #[cfg(feature = "ssr")] {
 
@@ -84,7 +153,7 @@ fn check_valid_password(password: &String) -> bool{
     valid && password.len() >= 8 && password.len() <= 16
 }
 
-fn generate_token() -> Result<String, ServerFnError> {
+fn generate_token() -> String {
     use rand::{thread_rng, Rng};
     use rand::distributions::{Alphanumeric};
 
@@ -95,19 +164,19 @@ fn generate_token() -> Result<String, ServerFnError> {
         .map(char::from)
         .collect();
 
-    Ok(generated_token)
+    generated_token
 }
 
-fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, ServerFnError> {
-    let token_hash = crate::db::db_helper::get_reset_hash(username).map_err(|_| ServerFnError::new("Unable to find reset token"))?;
+fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, ServerFnError<AuthError>> {
+    let token_hash = crate::db::db_helper::get_reset_hash(username).map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidToken))?;
 
-    verify_hash(reset_token, &token_hash).map_err(|_| ServerFnError::new("Error validating hash"))
+    verify_hash(reset_token, &token_hash).map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidToken))
 }
 
-fn verify_confirmation_token(username: &String, confirmation_token: &String) -> Result<bool, ServerFnError> {
-    let verification_hash = get_verification_hash(username).map_err(|_| ServerFnError::new("Unable to find confirmation token"))?;
+fn verify_confirmation_token(username: &String, confirmation_token: &String) -> Result<bool, ServerFnError<AuthError>> {
+    let verification_hash = get_verification_hash(username).map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidToken))?;
 
-    verify_hash(confirmation_token, &verification_hash).map_err(|_| ServerFnError::new("Error validating hash"))
+    verify_hash(confirmation_token, &verification_hash).map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidToken))
 }
 
 fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
@@ -199,24 +268,27 @@ pub async fn get_session() -> Result<String, ServerFnError> {
 
 /// Server function to log in user
 #[server(Login, "/api")]
-async fn login(username: String, password: String) -> Result<(), ServerFnError> {
+async fn login(username: String, password: String) -> Result<(), ServerFnError<AuthError>> {
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
-    println!("Attempting to log in user {username}");
     // Retrieve pass hash from DB
     let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
-        .map_err(|_err| ServerFnError::new("Error getting user"));
+        .map_err(|_err| ServerFnError::WrappedServerError(AuthError::InvalidCredentials));
 
     // Verify password hash with Argon2
     let verified_result = verify_hash(&password, &pass_result?);
 
     if verified_result.is_err() || !verified_result.unwrap() {
-        return Err(ServerFnError::new("Username or password incorrect"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InvalidCredentials,
+        ));
     }
 
     // Get current context
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
-        return Err(ServerFnError::new("No httpRequest stuff"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InternalServerError("No HttpRequest found in current context".to_string()),
+        ));
     };
 
     // Attach user to current session
@@ -265,15 +337,19 @@ pub async fn signup(
     password: String,
     email: String,
     confirm_password: String,
-) -> Result<(), ServerFnError> {
+) -> Result<(), ServerFnError<AuthError>> {
     // This should have been done on the form submit, but just in case something snuck through
     if confirm_password != password {
-        return Err(ServerFnError::new("Username and password do not match"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::PasswordConfirmationError,
+        ));
     }
 
     // Do server side password strength validation
     if !check_valid_password(&password) {
-        return Err(ServerFnError::new("Password does not meet requirements"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InvalidPassword,
+        ));
     }
 
     // Usernames should case insensitive
@@ -283,10 +359,16 @@ pub async fn signup(
     match does_user_exist(&username) {
         Ok(username_exists) => {
             if username_exists {
-                return Err(ServerFnError::new("That username is already taken"));
+                return Err(ServerFnError::WrappedServerError(AuthError::Error(
+                    "Invalid username!".to_string(),
+                )));
             }
         }
-        Err(_err) => return Err(ServerFnError::new("Internal server error")),
+        Err(err) => {
+            return Err(ServerFnError::WrappedServerError(
+                AuthError::InternalServerError(err.to_string()),
+            ))
+        }
     }
 
     // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
@@ -306,19 +388,22 @@ pub async fn signup(
     };
 
     // Creates DB user
-    let user =
-        create_user(user_info).map_err(|_err| ServerFnError::new("Unable to create user"))?;
+    let user = create_user(user_info).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
 
     // Generate random 32 bit reset token path
-    let generated_token = generate_token()?;
+    let generated_token = generate_token();
 
     // Hash token
-    let verification_token = hash_string(generated_token.clone())
-        .map_err(|_| ServerFnError::new("Internal server error"))?;
+    let verification_token = hash_string(generated_token.clone()).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
 
     // Save token hash to DB
-    crate::db::db_helper::save_verification(&username, &verification_token)
-        .map_err(|_| ServerFnError::new("Internal server error"))?;
+    crate::db::db_helper::save_verification(&username, &verification_token).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
 
     // Send welcome email
     smtp::send_email(
@@ -330,7 +415,9 @@ pub async fn signup(
 
     // Saving user to current session to stay logged in
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
-        return Err(ServerFnError::new("No httpRequest stuff"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InternalServerError("Unable to find HttpRequest in context".to_string()),
+        ));
     };
     println!("Saving user to session: {}", user.username);
     Identity::login(&req.extensions(), user.username.into()).unwrap();
@@ -347,34 +434,42 @@ pub async fn change_password(
     current_password: String,
     new_password: String,
     confirm_new_password: String,
-) -> Result<(), ServerFnError> {
+) -> Result<(), ServerFnError<AuthError>> {
     // Retrieve and check if supplied current password matches against store password hash
-    let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
-        .map_err(|_err| ServerFnError::new("Error getting user"));
+    let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    });
 
     let verified_result = verify_hash(&current_password, &pass_result?);
 
     // Check supplied current password is valid
     if verified_result.is_err() || !verified_result.unwrap() {
-        return Err(ServerFnError::new("Incorrect password"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InvalidCredentials,
+        ));
     }
 
     // Server side password confirmation
     if new_password != confirm_new_password {
-        return Err(ServerFnError::new("Passwords do not match"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::PasswordConfirmationError,
+        ));
     }
 
     // Do server side password strength validation
     if !check_valid_password(&new_password) {
-        return Err(ServerFnError::new("Password does not meet requirements"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InvalidPassword,
+        ));
     }
 
     // Hash new password
     let pass_hash = hash_string(new_password).expect("Error hashing password");
 
     // Store new password in database
-    crate::db::db_helper::update_user_password(&username, &pass_hash)
-        .map_err(|_err| ServerFnError::new("Error updating user password"))?;
+    crate::db::db_helper::update_user_password(&username, &pass_hash).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
 
     // Redirect
     leptos_actix::redirect("/login");
@@ -388,36 +483,41 @@ pub async fn reset_password(
     reset_token: String,
     new_password: String,
     confirm_password: String,
-) -> Result<(), ServerFnError> {
+) -> Result<(), ServerFnError<AuthError>> {
     println!("Requesting to reset password");
     // Verify reset token
     let token_verification = verify_reset_token(&username, &reset_token)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
-        return Err(ServerFnError::new(
-            "Error validation token. Token may be expired. Please try again",
-        ));
+        return Err(ServerFnError::WrappedServerError(AuthError::InvalidToken));
     }
 
     // Server side password confirmation
     if new_password != confirm_password {
-        return Err(ServerFnError::new("Passwords do not match"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::PasswordConfirmationError,
+        ));
     }
 
     // Do server side password strength validation
     if !check_valid_password(&new_password) {
-        return Err(ServerFnError::new("Password does not meet requirements"));
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InvalidPassword,
+        ));
     }
 
     // Hash new password
     let pass_hash = hash_string(new_password).expect("Error hashing password");
 
     // Store new password in database
-    crate::db::db_helper::update_user_password(&username, &pass_hash)
-        .map_err(|_err| ServerFnError::new("Error updating user password"))?;
+    crate::db::db_helper::update_user_password(&username, &pass_hash).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
 
-    remove_reset_token(&username).map_err(|err| ServerFnError::new(err.to_string()))?;
+    remove_reset_token(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
     // Redirect
     leptos_actix::redirect("/login");
 
@@ -440,7 +540,7 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
     leptos_actix::redirect("/");
 
     // Generate random 32 bit reset token path
-    let generated_token = generate_token()?;
+    let generated_token = generate_token();
 
     // Hash token
     let reset_token = hash_string(generated_token.clone())
@@ -460,23 +560,23 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
 pub async fn verify_user(
     username: String,
     verification_token: String,
-) -> Result<(), ServerFnError> {
+) -> Result<(), ServerFnError<AuthError>> {
     println!("Attempting to verify user");
     // Verify reset token
     let token_verification = verify_confirmation_token(&username, &verification_token)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
-        return Err(ServerFnError::new(
-            "Error validation token. Token may be expired. Please try again",
-        ));
+        return Err(ServerFnError::WrappedServerError(AuthError::InvalidToken));
     }
 
     set_user_as_verified(&username)
         .map_err(|_| ServerFnError::new("Error verifying user. Please contact us"))
         .expect("Error setting user as verified");
 
-    remove_verification_token(&username).map_err(|err| ServerFnError::new(err.to_string()))?;
+    remove_verification_token(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
 
     leptos_actix::redirect("/login");
 

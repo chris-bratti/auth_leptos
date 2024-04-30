@@ -33,11 +33,15 @@ pub fn App() -> impl IntoView {
                     <Route path="" view=HomePage/>
                     <Route
                         path="/user"
-                        view= || view! {
-                            <UserVerificationWrapper>
-                                <UserProfile/>
-                            </UserVerificationWrapper>
-                        }/>
+                        view=|| {
+                            view! {
+                                <UserVerificationWrapper>
+                                    <UserProfile/>
+                                </UserVerificationWrapper>
+                            }
+                        }
+                    />
+
                     <Route path="/signup" view=SignUp/>
                     <Route path="/login" view=Auth/>
                     <Route path="/forgotpassword" view=ForgotPassword/>
@@ -71,23 +75,43 @@ fn HomePage() -> impl IntoView {
 
 #[component]
 fn ForgotPassword() -> impl IntoView {
-    // TODO: Will need to implement user emails in order for this to be more secure.
-    // Currently, you can just request any username with any email and you can reset the password
-    // Will require users to provide emails when signing up - could just replace usernames (maybe hash them though?)
     let forgot_password = create_server_action::<RequestPasswordReset>();
+    let pending = forgot_password.pending();
 
     view! {
-        <h1>Forgot Password</h1>
         <div style:font-family="sans-serif" style:text-align="center">
-            <ActionForm action=forgot_password>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Username"
-                        <input class="form-control" type="text" name="username" required=true/>
-                    </label>
-                </div>
-                <input class="btn btn-primary" type="submit" value="Request Password Reset"/>
-            </ActionForm>
+            {move || {
+                if pending() {
+                    view! { <h1>Emailing reset instructions...</h1> }.into_view()
+                } else {
+                    view! {
+                        <h1>Forgot Password</h1>
+                        <p>
+                            "Enter your username. If a valid account exists, you will receive an email with reset instructions"
+                        </p>
+                        <ActionForm action=forgot_password>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Username"
+                                    <input
+                                        class="form-control"
+                                        type="text"
+                                        name="username"
+                                        required=true
+                                    />
+                                </label>
+                            </div>
+                            <input
+                                class="btn btn-primary"
+                                type="submit"
+                                value="Request Password Reset"
+                            />
+                        </ActionForm>
+                    }
+                        .into_view()
+                }
+            }}
+
         </div>
     }
 }
@@ -102,86 +126,103 @@ fn ResetPassword() -> impl IntoView {
     let reset_password = create_server_action::<PasswordReset>();
     // Used to fetch any errors returned from the server
     let reset_password_value = reset_password.value();
+
+    let pending = reset_password.pending();
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
-            <h1>Reset Password</h1>
-            <ActionForm
-                on:submit=move |ev| {
-                    let data = PasswordReset::from_event(&ev);
-                    if data.is_err() {
-                        ev.prevent_default();
-                    } else {
-                        let data_values = data.unwrap();
-                        if data_values.new_password != data_values.confirm_password {
-                            set_passwords_match(false);
-                            ev.prevent_default();
-                        }
-                    }
-                }
-
-                action=reset_password
-            >
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Username"
-                        <input class="form-control" type="text" name="username" required=true/>
-                    </label>
-                </div>
-                <input
-                    class="form-control"
-                    type="hidden"
-                    name="reset_token"
-                    value=move || generated_id()
-                />
-                <div class="mb-3">
-                    <label class="form-label">
-                        "New Password"
-                        <input
-                            class="form-control"
-                            type="password"
-                            name="new_password"
-                            required=true
-                            minLength=8
-                            maxLength=16
-                            pattern=PASSWORD_PATTERN
-                        />
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Confirm New Password"
-                        <input
-                            class="form-control"
-                            type="password"
-                            name="confirm_password"
-                            required=true
-                            minLength=8
-                            maxLength=16
-                            pattern=PASSWORD_PATTERN
-                        />
-                    </label>
-                </div>
-                <input class="btn btn-primary" type="submit" value="Update Password"/>
-            </ActionForm>
             {move || {
-                if !passwords_match.get() {
-                    view! { <p>Passwords do not match</p> }.into_view()
+                if pending() {
+                    view! { <h1>Resetting password...</h1> }.into_view()
                 } else {
-                    view! {}.into_view()
-                }
-            }}
-
-            {move || {
-                match reset_password_value.get() {
-                    Some(response) => {
-                        match response {
-                            Ok(_) => view! {}.into_view(),
-                            Err(server_err) => {
-                                view! { <p>{format!("{}", server_err.to_string())}</p> }.into_view()
+                    view! {
+                        <h1>Reset Password</h1>
+                        <ActionForm
+                            on:submit=move |ev| {
+                                let data = PasswordReset::from_event(&ev);
+                                if data.is_err() {
+                                    ev.prevent_default();
+                                } else {
+                                    let data_values = data.unwrap();
+                                    if data_values.new_password != data_values.confirm_password {
+                                        set_passwords_match(false);
+                                        ev.prevent_default();
+                                    }
+                                }
                             }
-                        }
+
+                            action=reset_password
+                        >
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Username"
+                                    <input
+                                        class="form-control"
+                                        type="text"
+                                        name="username"
+                                        required=true
+                                    />
+                                </label>
+                            </div>
+                            <input
+                                class="form-control"
+                                type="hidden"
+                                name="reset_token"
+                                value=move || generated_id()
+                            />
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "New Password"
+                                    <input
+                                        class="form-control"
+                                        type="password"
+                                        name="new_password"
+                                        required=true
+                                        minLength=8
+                                        maxLength=16
+                                        pattern=PASSWORD_PATTERN
+                                    />
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Confirm New Password"
+                                    <input
+                                        class="form-control"
+                                        type="password"
+                                        name="confirm_password"
+                                        required=true
+                                        minLength=8
+                                        maxLength=16
+                                        pattern=PASSWORD_PATTERN
+                                    />
+                                </label>
+                            </div>
+                            <input class="btn btn-primary" type="submit" value="Update Password"/>
+                        </ActionForm>
+                        {move || {
+                            if !passwords_match.get() {
+                                view! { <p>Passwords do not match</p> }.into_view()
+                            } else {
+                                view! {}.into_view()
+                            }
+                        }}
+
+                        {move || {
+                            match reset_password_value.get() {
+                                Some(response) => {
+                                    match response {
+                                        Ok(_) => view! {}.into_view(),
+                                        Err(server_err) => {
+                                            view! { <p>{format!("{}", server_err.to_string())}</p> }
+                                                .into_view()
+                                        }
+                                    }
+                                }
+                                None => view! {}.into_view(),
+                            }
+                        }}
                     }
-                    None => view! {}.into_view(),
+                        .into_view()
                 }
             }}
 
@@ -256,113 +297,144 @@ fn SignUp() -> impl IntoView {
     // Used for client side password validation
     let (passwords_match, set_passwords_match) = create_signal(true);
 
+    let pending = signup.pending();
+
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
-            <h1>"Create New User"</h1>
             // Form for user sign up, does some client side field validation
-            <ActionForm
-                on:submit=move |ev| {
-                    let data = SignUp::from_event(&ev);
-                    if data.is_err() {
-                        ev.prevent_default();
-                    } else {
-                        let data_values = data.unwrap();
-                        if data_values.password != data_values.confirm_password {
-                            set_passwords_match(false);
-                            ev.prevent_default();
-                        }
+            {move || {
+                if pending() {
+                    view! {
+                        <h1>Creating account...</h1>
+                        <p>"We're excited for you to get started :)"</p>
                     }
-                }
-
-                action=signup
-            >
-                <div class="mb-3">
-                    <label class="form-label">
-                        "First Name"
-                        <input class="form-control" type="text" name="first_name" required=true/>
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Last Name"
-                        <input class="form-control" type="text" name="last_name" required=true/>
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Username"
-                        <input
-                            class="form-control"
-                            type="text"
-                            name="username"
-                            required=true
-                            minLength=5
-                            maxLength=16
-                        />
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Email"
-                        <input class="form-control" type="email" name="email" required=true/>
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Password"
-                        <input
-                            class="form-control"
-                            type="password"
-                            name="password"
-                            required=true
-                            minLength=8
-                            maxLength=16
-                            pattern=PASSWORD_PATTERN
-                        />
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Password"
-                        <input
-                            class="form-control"
-                            type="password"
-                            name="confirm_password"
-                            required=true
-                            minLength=8
-                            maxLength=16
-                            pattern=PASSWORD_PATTERN
-                        />
-                    </label>
-                    {move || {
-                        if !passwords_match.get() {
-                            view! { <p>Passwords do not match</p> }.into_view()
-                        } else {
-                            view! {}.into_view()
-                        }
-                    }}
-
-                    {move || {
-                        match signup_value.get() {
-                            Some(response) => {
-                                match response {
-                                    Ok(_) => view! {}.into_view(),
-                                    Err(server_err) => {
-                                        view! {
-                                            // Displays any errors returned from the server
-                                            <p>{format!("{}", server_err.to_string())}</p>
-                                        }
-                                            .into_view()
+                        .into_view()
+                } else {
+                    view! {
+                        <h1>"Sign Up"</h1>
+                        <ActionForm
+                            on:submit=move |ev| {
+                                let data = SignUp::from_event(&ev);
+                                if data.is_err() {
+                                    ev.prevent_default();
+                                } else {
+                                    let data_values = data.unwrap();
+                                    if data_values.password != data_values.confirm_password {
+                                        set_passwords_match(false);
+                                        ev.prevent_default();
                                     }
                                 }
                             }
-                            None => view! {}.into_view(),
-                        }
-                    }}
 
-                </div>
-                <input class="btn btn-primary" type="submit" value="Sign Up"/>
-            </ActionForm>
+                            action=signup
+                        >
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "First Name"
+                                    <input
+                                        class="form-control"
+                                        type="text"
+                                        name="first_name"
+                                        required=true
+                                    />
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Last Name"
+                                    <input
+                                        class="form-control"
+                                        type="text"
+                                        name="last_name"
+                                        required=true
+                                    />
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Username"
+                                    <input
+                                        class="form-control"
+                                        type="text"
+                                        name="username"
+                                        required=true
+                                        minLength=5
+                                        maxLength=16
+                                    />
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Email"
+                                    <input
+                                        class="form-control"
+                                        type="email"
+                                        name="email"
+                                        required=true
+                                    />
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Password"
+                                    <input
+                                        class="form-control"
+                                        type="password"
+                                        name="password"
+                                        required=true
+                                        minLength=8
+                                        maxLength=16
+                                        pattern=PASSWORD_PATTERN
+                                    />
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Password"
+                                    <input
+                                        class="form-control"
+                                        type="password"
+                                        name="confirm_password"
+                                        required=true
+                                        minLength=8
+                                        maxLength=16
+                                        pattern=PASSWORD_PATTERN
+                                    />
+                                </label>
+                                {move || {
+                                    if !passwords_match.get() {
+                                        view! { <p>Passwords do not match</p> }.into_view()
+                                    } else {
+                                        view! {}.into_view()
+                                    }
+                                }}
+
+                                {move || {
+                                    match signup_value.get() {
+                                        Some(response) => {
+                                            match response {
+                                                Ok(_) => view! {}.into_view(),
+                                                Err(server_err) => {
+                                                    view! {
+                                                        // Displays any errors returned from the server
+                                                        <p>{format!("{}", server_err.to_string())}</p>
+                                                    }
+                                                        .into_view()
+                                                }
+                                            }
+                                        }
+                                        None => view! {}.into_view(),
+                                    }
+                                }}
+
+                            </div>
+                            <input class="btn btn-primary" type="submit" value="Sign Up"/>
+                        </ActionForm>
+                    }
+                        .into_view()
+                }
+            }}
+
         </div>
     }
 }
@@ -374,45 +446,58 @@ fn Auth() -> impl IntoView {
     // Used to fetch any errors returned from the Login function
     let login_value = login.value();
 
+    let pending = login.pending();
+
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
-            <h1>"Welcome to Leptos!"</h1>
-
-            <ActionForm action=login>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Username" <input class="form-control" type="text" name="username"/>
-                    </label>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">
-                        "Password" <input class="form-control" type="password" name="password"/>
-                    </label>
-                </div>
-                <input class="btn btn-primary" type="submit" value="Login"/>
-            </ActionForm>
-
             {move || {
-                match login_value.get() {
-                    Some(response) => {
-                        match response {
-                            Ok(_) => view! {}.into_view(),
-                            Err(server_err) => {
-                                view! {
-                                    // Displays any errors returned from the server
-                                    <p>{format!("{}", server_err.to_string())}</p>
+                if pending() {
+                    view! { <h1>Logging in...</h1> }.into_view()
+                } else {
+                    view! {
+                        <h1>"Welcome to Leptos!"</h1>
+
+                        <ActionForm action=login>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Username"
+                                    <input class="form-control" type="text" name="username"/>
+                                </label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    "Password"
+                                    <input class="form-control" type="password" name="password"/>
+                                </label>
+                            </div>
+                            <input class="btn btn-primary" type="submit" value="Login"/>
+                        </ActionForm>
+
+                        {move || {
+                            match login_value.get() {
+                                Some(response) => {
+                                    match response {
+                                        Ok(_) => view! {}.into_view(),
+                                        Err(server_err) => {
+                                            view! {
+                                                // Displays any errors returned from the server
+                                                <p>{format!("{}", server_err.to_string())}</p>
+                                            }
+                                                .into_view()
+                                        }
+                                    }
                                 }
-                                    .into_view()
+                                None => view! {}.into_view(),
                             }
-                        }
+                        }}
+
+                        <A class="btn btn-primary" href="/forgotpassword">
+                            "Forgot Password?"
+                        </A>
                     }
-                    None => view! {}.into_view(),
+                        .into_view()
                 }
             }}
-
-            <A class="btn btn-primary" href="/forgotpassword">
-                "Forgot Password?"
-            </A>
 
         </div>
     }
@@ -438,9 +523,13 @@ pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
             view! { <h1>Loading....</h1> }
         }>
             <Show when=user_is_logged_in fallback=logged_in_fallback>
-                {{provide_context(UserContext {
-                    user_signal: create_signal(user_result.get().unwrap().unwrap()),
-                })}}
+
+                {{
+                    provide_context(UserContext {
+                        user_signal: create_signal(user_result.get().unwrap().unwrap()),
+                    })
+                }}
+
                 <Show when=user_is_verified fallback=verified_fallback>
                     {children.with_value(|children| children())}
                 </Show>
@@ -467,10 +556,9 @@ pub fn UserProfile() -> impl IntoView {
     view! {
         {move || {
             if update_password.get() {
-                view! { <ChangePassword username = user.get().username/> }.into_view()
+                view! { <ChangePassword username=user.get().username/> }.into_view()
             } else {
                 view! {
-                    // let username = user.username;
                     <button class="btn btn-primary" on:click=move |_| set_update_password(true)>
                         Update Password
                     </button>
