@@ -19,7 +19,7 @@ pub fn hydrate() {
     mount_to_body(App);
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct User {
     first_name: String,
     last_name: String,
