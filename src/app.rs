@@ -80,6 +80,7 @@ fn ForgotPassword() -> impl IntoView {
 
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
+            <div class="container">
             {move || {
                 if pending() {
                     view! { <h1>Emailing reset instructions...</h1> }.into_view()
@@ -89,7 +90,7 @@ fn ForgotPassword() -> impl IntoView {
                         <p>
                             "Enter your username. If a valid account exists, you will receive an email with reset instructions"
                         </p>
-                        <ActionForm action=forgot_password>
+                        <ActionForm class="login-form" action=forgot_password>
                             <div class="mb-3">
                                 <label class="form-label">
                                     "Username"
@@ -111,6 +112,7 @@ fn ForgotPassword() -> impl IntoView {
                         .into_view()
                 }
             }}
+            </div>
 
         </div>
     }
@@ -130,13 +132,15 @@ fn ResetPassword() -> impl IntoView {
     let pending = reset_password.pending();
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
+        <div class="container">
             {move || {
                 if pending() {
                     view! { <h1>Resetting password...</h1> }.into_view()
                 } else {
                     view! {
+
                         <h1>Reset Password</h1>
-                        <ActionForm
+                        <ActionForm class="login-form"
                             on:submit=move |ev| {
                                 let data = PasswordReset::from_event(&ev);
                                 if data.is_err() {
@@ -225,7 +229,7 @@ fn ResetPassword() -> impl IntoView {
                         .into_view()
                 }
             }}
-
+            </div>
         </div>
     }
 }
@@ -302,6 +306,7 @@ fn SignUp() -> impl IntoView {
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
             // Form for user sign up, does some client side field validation
+            <div class="container">
             {move || {
                 if pending() {
                     view! {
@@ -312,7 +317,7 @@ fn SignUp() -> impl IntoView {
                 } else {
                     view! {
                         <h1>"Sign Up"</h1>
-                        <ActionForm
+                        <ActionForm class="login-form"
                             on:submit=move |ev| {
                                 let data = SignUp::from_event(&ev);
                                 if data.is_err() {
@@ -434,6 +439,7 @@ fn SignUp() -> impl IntoView {
                         .into_view()
                 }
             }}
+            </div>
 
         </div>
     }
@@ -456,8 +462,8 @@ fn Auth() -> impl IntoView {
                 } else {
                     view! {
                         <h1>"Welcome to Leptos!"</h1>
-
-                        <ActionForm action=login>
+                        <div class="container">
+                        <ActionForm class="login-form" action=login>
                             <div class="mb-3">
                                 <label class="form-label">
                                     "Username"
@@ -471,6 +477,9 @@ fn Auth() -> impl IntoView {
                                 </label>
                             </div>
                             <input class="btn btn-primary" type="submit" value="Login"/>
+                            <A class="forgot-password-btn" href="/forgotpassword">
+                            "Forgot Password?"
+                            </A>
                         </ActionForm>
 
                         {move || {
@@ -491,9 +500,8 @@ fn Auth() -> impl IntoView {
                             }
                         }}
 
-                        <A class="btn btn-primary" href="/forgotpassword">
-                            "Forgot Password?"
-                        </A>
+
+                        </div>
                     }
                         .into_view()
                 }
@@ -508,10 +516,19 @@ pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
     let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
     let verification_result = create_resource(
         move || user_result(),
-        |user| async move { check_user_verification(user.unwrap().unwrap().username).await },
+        |user| async move {
+            match user {
+                Some(user_result) => match user_result {
+                    Ok(valid_user) => check_user_verification(valid_user.username).await,
+                    Err(err) => Err(err),
+                },
+                None => Ok(false),
+            }
+        },
     );
     let children = store_value(children);
-    let user_is_logged_in = move || user_result.get().is_some();
+    let user_is_logged_in =
+        move || user_result.get().is_some() && user_result.get().unwrap().is_ok();
     let logged_in_fallback = || view! { <NotLoggedIn/> };
     let verified_fallback = || {
         view! { <NotVerified/> }
@@ -580,7 +597,7 @@ fn ChangePassword(username: String) -> impl IntoView {
     view! {
         <h1>Change Password</h1>
         <div style:font-family="sans-serif" style:text-align="center">
-            <ActionForm
+            <ActionForm class="login-form"
                 on:submit=move |ev| {
                     let data = UpdatePassword::from_event(&ev);
                     if data.is_err() {
@@ -641,6 +658,9 @@ fn ChangePassword(username: String) -> impl IntoView {
                     </label>
                 </div>
                 <input class="btn btn-primary" type="submit" value="Update Password"/>
+                <A class="forgot-password-btn" href="/user">
+                "To user"
+                </A>
             </ActionForm>
             {move || {
                 if !passwords_match.get() {
@@ -672,9 +692,7 @@ fn ChangePassword(username: String) -> impl IntoView {
                 }
             }}
 
-            <A class="btn btn-primary" href="/user">
-                "To user"
-            </A>
+
         </div>
     }
 }
