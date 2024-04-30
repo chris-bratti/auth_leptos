@@ -1,10 +1,10 @@
-use crate::db::models::{DBResetToken, DBUser, DBVerificationToken, NewDBResetToken, NewDBUser};
-use crate::db::schema::{self, password_reset_tokens};
+use crate::db::models::{DBUser, NewDBUser};
+use crate::db::schema::{self};
 use diesel::pg::PgConnection;
-use diesel::{prelude::*, select};
+use diesel::prelude::*;
 use dotenvy::dotenv;
+use schema::users::dsl::*;
 use std::env;
-use std::time::Duration;
 
 use super::schema::users;
 
@@ -35,67 +35,6 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         .get_result(&mut conn)
 }
 
-pub fn get_reset_token_from_db(
-    uname: &String,
-) -> Result<Option<DBResetToken>, diesel::result::Error> {
-    use schema::users::dsl::*;
-
-    let mut connection = establish_connection();
-
-    let db_user = users
-        .filter(username.eq(uname))
-        .select(DBUser::as_select())
-        .get_result(&mut connection)?;
-
-    // get pages for a book
-    let pass_reset_token = DBResetToken::belonging_to(&db_user)
-        .limit(1)
-        .select(DBResetToken::as_select())
-        .first(&mut connection)
-        .optional()?;
-
-    Ok(pass_reset_token)
-}
-
-pub fn save_reset_token_to_db(
-    uname: &String,
-    rtoken: &String,
-) -> Result<(), diesel::result::Error> {
-    use schema::users::dsl::*;
-
-    let mut connection = establish_connection();
-
-    let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
-
-    // Gets 20 minutes from current time
-    let token_expiry = now
-        .checked_add(Duration::new(1200, 0))
-        .expect("Error parsing time");
-
-    let db_user: Option<DBUser> = users
-        .filter(username.eq(uname))
-        .limit(1)
-        .select(DBUser::as_select())
-        .first(&mut connection)
-        .optional()?;
-
-    match db_user {
-        Some(user) => {
-            let db_reset_token = NewDBResetToken {
-                reset_token: rtoken,
-                reset_token_expiry: &token_expiry,
-                user_id: &user.id,
-            };
-            diesel::insert_into(password_reset_tokens::table)
-                .values(&db_reset_token)
-                .returning(DBResetToken::as_returning())
-                .get_result(&mut connection)?;
-            Ok(())
-        }
-        None => Err(diesel::result::Error::NotFound),
-    }
-}
-
 pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::result::Error> {
     use schema::users::dsl::*;
     let mut connection = establish_connection();
@@ -106,6 +45,15 @@ pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::
         .select(DBUser::as_select())
         .first(&mut connection)
         .optional()
+}
+
+pub fn set_db_user_as_verified(uname: &String) -> Result<DBUser, diesel::result::Error> {
+    let mut connection = establish_connection();
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set(verified.eq(true))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)
 }
 
 pub fn update_db_username(
@@ -146,10 +94,21 @@ pub fn delete_db_user(uname: &String) -> Result<usize, diesel::result::Error> {
 #[cfg(test)]
 pub mod test_db {
 
+    use chrono::{DateTime, Utc};
+
     use crate::{
         auth::UserInfo,
-        db::users_db::{
-            delete_db_user, get_user_from_username, update_db_password, update_db_username,
+        db::{
+            reset_token_table::{
+                delete_db_reset_token, get_reset_token_from_db, save_reset_token_to_db,
+            },
+            users_db::{
+                delete_db_user, get_user_from_username, update_db_password, update_db_username,
+            },
+            verification_tokens_table::{
+                delete_db_verification_token, get_verification_token_from_db,
+                save_verification_token_to_db,
+            },
         },
     };
 
@@ -222,6 +181,109 @@ pub mod test_db {
         assert!(count.is_ok());
 
         let count = count.unwrap();
+
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_reset_tokens() {
+        let user_info = UserInfo {
+            first_name: String::from("Foo"),
+            last_name: String::from("Barley"),
+            username: String::from("veryunique"),
+            pass_hash: String::from("superdupersecrethash"),
+            email: String::from("foo@bar.com"),
+        };
+
+        // Create a new user
+        let _db_user = create_db_user(user_info.clone()).expect("Error creating user");
+
+        let reset_token = String::from("superSecrettokenHash");
+
+        // Create reset token for user
+        save_reset_token_to_db(&user_info.username, &reset_token).expect("Error saving to DB");
+
+        // Read reset token
+        let retrieved_token =
+            get_reset_token_from_db(&user_info.username).expect("Error reading from DB");
+
+        assert!(retrieved_token.is_some());
+
+        let retrieved_token = retrieved_token.unwrap();
+
+        // Make sure reset token is the same
+        assert_eq!(reset_token, retrieved_token.reset_token);
+
+        // Make sure the expiration timestamp was create correctly
+        let expiry = retrieved_token.reset_token_expiry;
+        let timestamp: DateTime<Utc> = DateTime::from(expiry);
+
+        // Get the current time
+        let current_time = Utc::now();
+
+        // Calculate the difference in minutes
+        let time_until_expiry = current_time.signed_duration_since(timestamp).num_minutes();
+
+        assert!(time_until_expiry >= -20);
+
+        let count =
+            delete_db_reset_token(&user_info.username).expect("Error deleting reset token!");
+
+        assert_eq!(count, 1);
+
+        let count = delete_db_user(&user_info.username).expect("Error deleting user!");
+
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_verification_tokens() {
+        let user_info = UserInfo {
+            first_name: String::from("Foo"),
+            last_name: String::from("Barley"),
+            username: String::from("evenmoreunique"),
+            pass_hash: String::from("superdupersecrethash"),
+            email: String::from("foo@bar.com"),
+        };
+
+        // Create a new user
+        let _db_user = create_db_user(user_info.clone()).expect("Error creating user");
+
+        let verification_token = String::from("superSecrettokenHash");
+
+        // Create reset token for user
+        save_verification_token_to_db(&user_info.username, &verification_token)
+            .expect("Error saving to DB");
+
+        // Read reset token
+        let retrieved_token =
+            get_verification_token_from_db(&user_info.username).expect("Error reading from DB");
+
+        assert!(retrieved_token.is_some());
+
+        let retrieved_token = retrieved_token.unwrap();
+
+        // Make sure reset token is the same
+        assert_eq!(verification_token, retrieved_token.confirm_token);
+
+        // Make sure the expiration timestamp was create correctly
+        let expiry = retrieved_token.confirm_token_expiry;
+        let timestamp: DateTime<Utc> = DateTime::from(expiry);
+
+        // Get the current time
+        let current_time = Utc::now();
+
+        // Calculate the difference in minutes
+        let time_until_expiry = current_time.signed_duration_since(timestamp).num_minutes();
+
+        assert!(time_until_expiry >= -20);
+
+        let count =
+            delete_db_verification_token(&user_info.username).expect("Error deleting reset token!");
+
+        assert_eq!(count, 1);
+
+        let count = delete_db_user(&user_info.username).expect("Error deleting user!");
 
         assert_eq!(count, 1);
     }

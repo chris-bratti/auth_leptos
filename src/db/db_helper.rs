@@ -4,9 +4,15 @@ use chrono::{DateTime, Utc};
 
 use crate::{auth::UserInfo, User};
 
-use super::users_db::{
-    create_db_user, delete_db_user, get_reset_token_from_db, get_user_from_username,
-    save_reset_token_to_db, update_db_password, update_db_username,
+use super::{
+    reset_token_table::{delete_db_reset_token, get_reset_token_from_db, save_reset_token_to_db},
+    users_db::{
+        create_db_user, delete_db_user, get_user_from_username, set_db_user_as_verified,
+        update_db_password, update_db_username,
+    },
+    verification_tokens_table::{
+        delete_db_verification_token, get_verification_token_from_db, save_verification_token_to_db,
+    },
 };
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
@@ -24,6 +30,58 @@ pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> 
         Some(user) => Ok(user.pass_hash),
         None => Err(DBError::NotFound(username.clone())),
     }
+}
+
+pub fn is_user_verified(username: &String) -> Result<bool, DBError> {
+    let db_user =
+        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    match db_user {
+        Some(user) => Ok(user.verified),
+        None => Err(DBError::NotFound(username.clone())),
+    }
+}
+
+pub fn set_user_as_verified(username: &String) -> Result<(), DBError> {
+    set_db_user_as_verified(username).map_err(|err| DBError::InternalServerError(err))?;
+    Ok(())
+}
+
+pub fn get_verification_hash(username: &String) -> Result<String, DBError> {
+    let verification_token = get_verification_token_from_db(username)
+        .map_err(|err| DBError::InternalServerError(err))?;
+
+    match verification_token {
+        Some(token) => {
+            let expiry = token.confirm_token_expiry;
+            let timestamp: DateTime<Utc> = DateTime::from(expiry);
+
+            // Get the current time
+            let current_time = Utc::now();
+
+            // Calculate the difference in minutes
+            let time_until_expiry = current_time.signed_duration_since(timestamp).num_minutes();
+
+            if time_until_expiry >= 0 {
+                return Err(DBError::Error("Token expired".to_string()));
+            }
+            Ok(token.confirm_token)
+        }
+        None => Err(DBError::NotFound(username.clone())),
+    }
+}
+
+pub fn remove_reset_token(username: &String) -> Result<(), DBError> {
+    let _ = delete_db_reset_token(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    Ok(())
+}
+
+pub fn remove_verification_token(username: &String) -> Result<(), DBError> {
+    let _ =
+        delete_db_verification_token(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    Ok(())
 }
 
 pub fn get_reset_hash(username: &String) -> Result<String, DBError> {
@@ -117,6 +175,11 @@ pub fn save_reset(username: &String, reset_token: &String) -> Result<(), DBError
     }
 
     save_reset_token_to_db(username, reset_token).map_err(|err| DBError::InternalServerError(err))
+}
+
+pub fn save_verification(username: &String, verification_token: &String) -> Result<(), DBError> {
+    save_verification_token_to_db(username, verification_token)
+        .map_err(|err| DBError::InternalServerError(err))
 }
 
 pub fn get_user_email(username: &String) -> Result<String, DBError> {

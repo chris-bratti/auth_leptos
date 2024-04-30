@@ -26,6 +26,11 @@ use crate::db::db_helper::does_user_exist;
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::find_user_by_username;
 #[cfg(feature = "ssr")]
+use crate::db::db_helper::{
+    get_verification_hash, is_user_verified, remove_reset_token, remove_verification_token,
+    set_user_as_verified,
+};
+#[cfg(feature = "ssr")]
 use crate::server::helpers::get_env_variable;
 #[cfg(feature = "ssr")]
 use crate::smtp::{self, generate_reset_email_body, generate_welcome_email_body};
@@ -44,7 +49,7 @@ cfg_if! {
     use regex::Regex;
 
 /// Hash password with Argon2
-fn hash_password(password: String) -> Result<String, argon2::password_hash::Error> {
+fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
 
     let argon2 = Argon2::default();
@@ -57,7 +62,7 @@ fn hash_password(password: String) -> Result<String, argon2::password_hash::Erro
 }
 
 /// Verifies password against hash
-fn verify_password(
+fn verify_hash(
     password: &String,
     password_hash: &String,
 ) -> Result<bool, argon2::password_hash::Error> {
@@ -79,7 +84,7 @@ fn check_valid_password(password: &String) -> bool{
     valid && password.len() >= 8 && password.len() <= 16
 }
 
-fn generate_password_reset_token() -> Result<String, ServerFnError> {
+fn generate_token() -> Result<String, ServerFnError> {
     use rand::{thread_rng, Rng};
     use rand::distributions::{Alphanumeric};
 
@@ -96,7 +101,13 @@ fn generate_password_reset_token() -> Result<String, ServerFnError> {
 fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, ServerFnError> {
     let token_hash = crate::db::db_helper::get_reset_hash(username).map_err(|_| ServerFnError::new("Unable to find reset token"))?;
 
-    verify_password(reset_token, &token_hash).map_err(|_| ServerFnError::new("Error validation hash"))
+    verify_hash(reset_token, &token_hash).map_err(|_| ServerFnError::new("Error validating hash"))
+}
+
+fn verify_confirmation_token(username: &String, confirmation_token: &String) -> Result<bool, ServerFnError> {
+    let verification_hash = get_verification_hash(username).map_err(|_| ServerFnError::new("Unable to find confirmation token"))?;
+
+    verify_hash(confirmation_token, &verification_hash).map_err(|_| ServerFnError::new("Error validating hash"))
 }
 
 fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
@@ -109,14 +120,14 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let name = user.expect("No user present!").first_name;
 
-    let user_email = decrypt_email(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
+    let user_email = decrypt_string(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
     smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name);
 
     Ok(())
 }
 
-fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
+fn encrypt_string(data: &String) -> Result<String, aes_gcm::Error> {
 
     let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
 
@@ -124,7 +135,7 @@ fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
 
     let cipher = Aes256Gcm::new(&key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
-    let ciphertext = cipher.encrypt(&nonce, email.as_bytes())?;
+    let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
 
     //let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())?;
 
@@ -133,15 +144,14 @@ fn encrypt_email(email: &String) -> Result<String, aes_gcm::Error> {
 
 
     let output = hex::encode(encrypted_data);
-    println!("{}", output);
     Ok(output)
 }
 
-fn decrypt_email(encrypted_email: String) -> Result<String, aes_gcm::Error> {
+fn decrypt_string(encrypted: String) -> Result<String, aes_gcm::Error> {
 
     let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
 
-    let encrypted_data = hex::decode(encrypted_email)
+    let encrypted_data = hex::decode(encrypted)
         .expect("failed to decode hex string into vec");
 
     let key = Key::<Aes256Gcm>::from_slice(encryption_key.as_bytes());
@@ -198,7 +208,7 @@ async fn login(username: String, password: String) -> Result<(), ServerFnError> 
         .map_err(|_err| ServerFnError::new("Error getting user"));
 
     // Verify password hash with Argon2
-    let verified_result = verify_password(&password, &pass_result?);
+    let verified_result = verify_hash(&password, &pass_result?);
 
     if verified_result.is_err() || !verified_result.unwrap() {
         return Err(ServerFnError::new("Username or password incorrect"));
@@ -282,9 +292,9 @@ pub async fn signup(
     // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
 
     // Hash password
-    let pass_hash = hash_password(password).expect("Error hashing password");
+    let pass_hash = hash_string(password).expect("Error hashing password");
 
-    let encrypted_email = encrypt_email(&email).expect("Error encrypting email");
+    let encrypted_email = encrypt_string(&email).expect("Error encrypting email");
 
     // Create user info to interact with DB
     let user_info = UserInfo {
@@ -299,10 +309,22 @@ pub async fn signup(
     let user =
         create_user(user_info).map_err(|_err| ServerFnError::new("Unable to create user"))?;
 
+    // Generate random 32 bit reset token path
+    let generated_token = generate_token()?;
+
+    // Hash token
+    let verification_token = hash_string(generated_token.clone())
+        .map_err(|_| ServerFnError::new("Internal server error"))?;
+
+    // Save token hash to DB
+    crate::db::db_helper::save_verification(&username, &verification_token)
+        .map_err(|_| ServerFnError::new("Internal server error"))?;
+
+    // Send welcome email
     smtp::send_email(
         &email,
         "Welcome!".to_string(),
-        generate_welcome_email_body(&first_name),
+        generate_welcome_email_body(&first_name, &generated_token),
         &first_name,
     );
 
@@ -330,7 +352,7 @@ pub async fn change_password(
     let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
         .map_err(|_err| ServerFnError::new("Error getting user"));
 
-    let verified_result = verify_password(&current_password, &pass_result?);
+    let verified_result = verify_hash(&current_password, &pass_result?);
 
     // Check supplied current password is valid
     if verified_result.is_err() || !verified_result.unwrap() {
@@ -348,7 +370,7 @@ pub async fn change_password(
     }
 
     // Hash new password
-    let pass_hash = hash_password(new_password).expect("Error hashing password");
+    let pass_hash = hash_string(new_password).expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash)
@@ -389,12 +411,13 @@ pub async fn reset_password(
     }
 
     // Hash new password
-    let pass_hash = hash_password(new_password).expect("Error hashing password");
+    let pass_hash = hash_string(new_password).expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash)
         .map_err(|_err| ServerFnError::new("Error updating user password"))?;
 
+    remove_reset_token(&username).map_err(|err| ServerFnError::new(err.to_string()))?;
     // Redirect
     leptos_actix::redirect("/login");
 
@@ -417,10 +440,10 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
     leptos_actix::redirect("/");
 
     // Generate random 32 bit reset token path
-    let generated_token = generate_password_reset_token()?;
+    let generated_token = generate_token()?;
 
     // Hash token
-    let reset_token = hash_password(generated_token.clone())
+    let reset_token = hash_string(generated_token.clone())
         .map_err(|_| ServerFnError::new("Internal server error"))?;
 
     // Save token hash to DB
@@ -433,18 +456,54 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
     Ok(())
 }
 
+#[server(VerifyUser, "/api")]
+pub async fn verify_user(
+    username: String,
+    verification_token: String,
+) -> Result<(), ServerFnError> {
+    println!("Attempting to verify user");
+    // Verify reset token
+    let token_verification = verify_confirmation_token(&username, &verification_token)?;
+
+    // If token does not match or is no longer valid, return
+    if !token_verification {
+        return Err(ServerFnError::new(
+            "Error validation token. Token may be expired. Please try again",
+        ));
+    }
+
+    set_user_as_verified(&username)
+        .map_err(|_| ServerFnError::new("Error verifying user. Please contact us"))
+        .expect("Error setting user as verified");
+
+    remove_verification_token(&username).map_err(|err| ServerFnError::new(err.to_string()))?;
+
+    leptos_actix::redirect("/login");
+
+    Ok(())
+}
+
+#[server(IsUserVerified, "/api")]
+pub async fn check_user_verification(username: String) -> Result<bool, ServerFnError> {
+    let verified = is_user_verified(&username)
+        .map_err(|err| ServerFnError::new(format!("Error verifying user: {}", err.to_string())))?;
+
+    println!("User verification: {}", verified);
+    Ok(verified)
+}
+
 #[cfg(test)]
 mod test_auth {
 
-    use crate::auth::{check_valid_password, decrypt_email, verify_password};
+    use crate::auth::{check_valid_password, decrypt_string, verify_hash};
 
-    use super::{encrypt_email, hash_password};
+    use super::{encrypt_string, hash_string};
 
     #[test]
     fn test_password_hashing() {
         let password = "whatALovelyL!ttleP@s$w0rd".to_string();
 
-        let hashed_password = hash_password(password.clone());
+        let hashed_password = hash_string(password.clone());
 
         assert!(hashed_password.is_ok());
 
@@ -452,7 +511,7 @@ mod test_auth {
 
         assert_ne!(password, hashed_password);
 
-        let pass_match = verify_password(&password, &hashed_password);
+        let pass_match = verify_hash(&password, &hashed_password);
 
         assert!(pass_match.is_ok());
 
@@ -462,12 +521,12 @@ mod test_auth {
     #[test]
     fn test_email_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email = encrypt_email(&email).expect("There was an error encrypting");
+        let encrypted_email = encrypt_string(&email).expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
         let decrypted_email =
-            decrypt_email(encrypted_email).expect("There was an error decrypting");
+            decrypt_string(encrypted_email).expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
     }

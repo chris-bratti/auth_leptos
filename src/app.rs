@@ -6,6 +6,11 @@ use leptos_router::*;
 static PASSWORD_PATTERN: &str =
     "^.*(?=.{8,}).*(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@!:#$^;%&?]).+$";
 
+#[derive(Clone)]
+struct UserContext {
+    pub user_signal: (ReadSignal<User>, WriteSignal<User>),
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
@@ -26,11 +31,18 @@ pub fn App() -> impl IntoView {
             <main>
                 <Routes>
                     <Route path="" view=HomePage/>
-                    <Route path="/user" view=UserPage/>
+                    <Route
+                        path="/user"
+                        view= || view! {
+                            <UserVerificationWrapper>
+                                <UserProfile/>
+                            </UserVerificationWrapper>
+                        }/>
                     <Route path="/signup" view=SignUp/>
                     <Route path="/login" view=Auth/>
                     <Route path="/forgotpassword" view=ForgotPassword/>
                     <Route path="/reset/:generated_id" view=ResetPassword/>
+                    <Route path="/verify/:generated_id" view=Verify/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>
@@ -106,6 +118,7 @@ fn ResetPassword() -> impl IntoView {
                         }
                     }
                 }
+
                 action=reset_password
             >
                 <div class="mb-3">
@@ -169,6 +182,64 @@ fn ResetPassword() -> impl IntoView {
                         }
                     }
                     None => view! {}.into_view(),
+                }
+            }}
+
+        </div>
+    }
+}
+
+#[component]
+fn Verify() -> impl IntoView {
+    let params = use_params_map();
+    let generated_id =
+        move || params.with(|params| params.get("generated_id").cloned().unwrap_or_default());
+
+    let verify_user = create_server_action::<VerifyUser>();
+    let validation_result = verify_user.value();
+    let pending = verify_user.pending();
+
+    view! {
+        <div style:font-family="sans-serif" style:text-align="center">
+            {move || {
+                if !pending() {
+                    if validation_result.get().is_some() {
+                        view! {
+                            <h1>There was an error verifying your account</h1>
+                            <p>Your verification link could have expired. Try resending</p>
+                        }
+                            .into_view()
+                    } else {
+                        view! {
+                            <ActionForm action=verify_user>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        "Username"
+                                        <input
+                                            class="form-control"
+                                            type="text"
+                                            name="username"
+                                            required=true
+                                        />
+                                    </label>
+                                </div>
+                                <input
+                                    class="form-control"
+                                    type="hidden"
+                                    name="verification_token"
+                                    value=generated_id()
+                                />
+                                <input
+                                    class="btn btn-primary"
+                                    type="submit"
+                                    value="Request Password Reset"
+                                />
+                            </ActionForm>
+                        }
+                            .into_view()
+                    }
+                } else {
+                    view! { <h1>Verifying...</h1> }.into_view()
                 }
             }}
 
@@ -348,65 +419,65 @@ fn Auth() -> impl IntoView {
 }
 
 #[component]
-fn UserPage() -> impl IntoView {
-    // Calls server function to retrieve User object from username currently stored in session
+pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
     let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
-    let loading = user_result.loading();
-    let user_signal: RwSignal<Option<User>> = create_rw_signal(None);
-    let (update_password, set_update_password) = create_signal(false);
+    let verification_result = create_resource(
+        move || user_result(),
+        |user| async move { check_user_verification(user.unwrap().unwrap().username).await },
+    );
+    let children = store_value(children);
+    let user_is_logged_in = move || user_result.get().is_some();
+    let logged_in_fallback = || view! { <NotLoggedIn/> };
+    let verified_fallback = || {
+        view! { <NotVerified/> }
+    };
+    let user_is_verified =
+        move || verification_result.get().is_some() && verification_result.get().unwrap().unwrap();
+    view! {
+        <Suspense fallback=|| {
+            view! { <h1>Loading....</h1> }
+        }>
+            <Show when=user_is_logged_in fallback=logged_in_fallback>
+                {{provide_context(UserContext {
+                    user_signal: create_signal(user_result.get().unwrap().unwrap()),
+                })}}
+                <Show when=user_is_verified fallback=verified_fallback>
+                    {children.with_value(|children| children())}
+                </Show>
+            </Show>
+        </Suspense>
+    }
+}
+
+#[component]
+pub fn UserVerificationWrapper(children: ChildrenFn) -> impl IntoView {
+    let children = store_value(children);
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
-
-            {{
-                move || {
-                    if loading() {
-                        view! { <p>Loading...</p> }.into_view()
-                    } else {
-                        user_signal
-                            .set(
-                                match user_result.get() {
-                                    Some(user_result) => {
-                                        match user_result {
-                                            Ok(user) => Some(user),
-                                            Err(_err) => None,
-                                        }
-                                    }
-                                    None => None,
-                                },
-                            );
-                        match user_signal.get() {
-                            None => view! { <NotLoggedIn/> }.into_view(),
-                            Some(user) => {
-                                view! {
-                                    {move || {
-                                        if update_password.get() {
-                                            view! {
-                                                // let username = user.username;
-                                                <ChangePassword username=user.username.clone()/>
-                                            }
-                                                .into_view()
-                                        } else {
-                                            view! {
-                                                // let username = user.username;
-                                                <button
-                                                    class="btn btn-primary"
-                                                    on:click=move |_| set_update_password(true)
-                                                >
-                                                    Update Password
-                                                </button>
-                                            }
-                                                .into_view()
-                                        }
-                                    }}
-                                }
-                                    .into_view()
-                            }
-                        }
-                    }
-                }
-            }}
-
+            <LoggedIn>{children.with_value(|children| children())}</LoggedIn>
         </div>
+    }
+}
+
+#[component]
+pub fn UserProfile() -> impl IntoView {
+    let (user, _): (ReadSignal<User>, WriteSignal<User>) =
+        expect_context::<UserContext>().user_signal;
+    let (update_password, set_update_password) = create_signal(false);
+    view! {
+        {move || {
+            if update_password.get() {
+                view! { <ChangePassword username = user.get().username/> }.into_view()
+            } else {
+                view! {
+                    // let username = user.username;
+                    <button class="btn btn-primary" on:click=move |_| set_update_password(true)>
+                        Update Password
+                    </button>
+                }
+                    .into_view()
+            }
+        }}
     }
 }
 
@@ -438,6 +509,7 @@ fn ChangePassword(username: String) -> impl IntoView {
                         }
                     }
                 }
+
                 action=update_password
             >
                 <input class="form-control" type="hidden" name="username" value=username/>
@@ -537,6 +609,19 @@ fn NotLoggedIn() -> impl IntoView {
         <div>
             <A class="btn btn-primary" href="/signup">
                 "Signup"
+            </A>
+        </div>
+    }
+}
+
+#[component]
+fn NotVerified() -> impl IntoView {
+    view! {
+        <h1>Your email is not verified</h1>
+        <p>Please follow the link we sent to your inbox to verify your email!</p>
+        <div>
+            <A class="btn btn-primary" href="/">
+                "Home"
             </A>
         </div>
     }
