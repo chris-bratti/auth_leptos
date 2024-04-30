@@ -8,7 +8,7 @@ pub fn get_env_variable(variable: &str) -> Option<String> {
         Err(_) => {
             dotenv().ok();
 
-            match env::var("ENCRYPTION_KEY") {
+            match env::var(variable) {
                 Ok(var_from_file) => Some(var_from_file.trim().to_string()),
                 Err(_) => None,
             }
