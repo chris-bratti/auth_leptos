@@ -27,8 +27,6 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         verified: &false,
     };
 
-    println!("{:#?}", new_user);
-
     diesel::insert_into(users::table)
         .values(&new_user)
         .returning(DBUser::as_returning())

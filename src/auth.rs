@@ -306,12 +306,7 @@ pub async fn get_user_from_session() -> Result<crate::User, ServerFnError> {
     // Extract Actix Identity
     let user: Option<Identity> = extract().await?;
 
-    let session: Session = extract().await?;
-
-    match session.get::<String>("actix_identity.user_id").unwrap() {
-        Some(user) => println!("Found user in session: {user}"),
-        None => println!("No user in session"),
-    }
+    //let session: Session = extract().await?;
 
     // If user exists in session, gets User entry from DB
     if let Some(user) = user {
@@ -588,7 +583,6 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
     let verified = is_user_verified(&username)
         .map_err(|err| ServerFnError::new(format!("Error verifying user: {}", err.to_string())))?;
 
-    println!("User verification: {}", verified);
     Ok(verified)
 }
 
