@@ -1,7 +1,9 @@
 use crate::{auth::*, User};
+use image::{DynamicImage, ImageBuffer, ImageFormat};
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
+use std::io::Cursor;
 
 static PASSWORD_PATTERN: &str =
     "^.*(?=.{8,}).*(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@!:#$^;%&?]).+$";

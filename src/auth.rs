@@ -115,7 +115,40 @@ impl FromStr for AuthError {
 cfg_if! {
     if #[cfg(feature = "ssr")] {
 
+    use totp_rs::{Algorithm, TOTP, Secret};
+
+
     use regex::Regex;
+
+fn get_totp_config(username: String, token: &String) -> TOTP {
+    TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
+        Some("Leptos Auth".to_string()),
+        username,
+    ).unwrap()
+}
+
+fn create_2fa_for_user(username: String) -> Vec<u8>{
+    //TODO: Check if user already has 2fa enabled
+    //let token = generate_token();
+    let token = "ThisisiareallygooToken".to_string();
+    let totp = get_totp_config(username, &token);
+    let encrypted_token = encrypt_string(&token).expect("Error encrypting token");
+    //TODO: Save token to DB
+    let qr_code = totp.get_qr_png().expect("Error generating QR code");
+    qr_code
+}
+
+fn get_totp(username: String) -> String{
+    let token = "ThisisiareallygooToken".to_string();
+    let totp = get_totp_config(username, &token);
+
+    totp.generate_current().unwrap()
+}
 
 /// Hash password with Argon2
 fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
@@ -589,9 +622,11 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
 #[cfg(test)]
 mod test_auth {
 
-    use crate::auth::{check_valid_password, decrypt_string, verify_hash};
+    use std::io::Cursor;
 
-    use super::{encrypt_string, hash_string};
+    use crate::auth::{check_valid_password, decrypt_string, get_totp, verify_hash};
+
+    use super::{create_2fa_for_user, encrypt_string, hash_string};
 
     #[test]
     fn test_password_hashing() {
@@ -658,5 +693,22 @@ mod test_auth {
         let invalid_password = String::from("noNumbers!!");
 
         assert!(!check_valid_password(&invalid_password));
+    }
+
+    #[test]
+    fn test_totp() {
+        let token = "TestSecretSuperSecret".to_string();
+        let username = "exampleuser".to_string();
+
+        //let qr = create_2fa_for_user(username.clone());
+
+        //let cursor = Cursor::new(qr);
+        /*
+        image::load(cursor, image::ImageFormat::Png)
+            .unwrap()
+            .save("./qr.png")
+            .expect("uh oh");
+        */
+        println!("{}", get_totp(username));
     }
 }
