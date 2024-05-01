@@ -18,6 +18,8 @@ diesel::table! {
         pass_hash -> Text,
         email -> Text,
         verified -> Bool,
+        two_factor -> Bool,
+        two_factor_token -> Nullable<Text>,
     }
 }
 

@@ -25,6 +25,7 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         pass_hash: &user_info.pass_hash,
         email: &user_info.email,
         verified: &false,
+        two_factor: &false,
     };
 
     diesel::insert_into(users::table)
@@ -43,6 +44,21 @@ pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::
         .select(DBUser::as_select())
         .first(&mut connection)
         .optional()
+}
+
+pub fn add_2fa_for_db_user(
+    uname: &String,
+    two_ftoken: &String,
+) -> Result<(), diesel::result::Error> {
+    use schema::users::dsl::*;
+    let mut connection = establish_connection();
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set((two_factor.eq(true), two_factor_token.eq(two_ftoken)))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)?;
+
+    Ok(())
 }
 
 pub fn set_db_user_as_verified(uname: &String) -> Result<DBUser, diesel::result::Error> {

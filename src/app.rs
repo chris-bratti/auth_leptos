@@ -50,6 +50,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/forgotpassword" view=ForgotPassword/>
                     <Route path="/reset/:generated_id" view=ResetPassword/>
                     <Route path="/verify/:generated_id" view=Verify/>
+                    <Route path="/show" view=EnableTwoFactor/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>
@@ -124,6 +125,25 @@ fn ForgotPassword() -> impl IntoView {
             </div>
 
         </div>
+    }
+}
+
+#[component]
+fn EnableTwoFactor() -> impl IntoView {
+    let qr_code = create_resource(
+        || (),
+        |_| async move { enable_2fa("TODO: change username".to_string()).await },
+    );
+    let loading = qr_code.loading();
+    view! {
+        {move || if loading(){
+            view! {<h1>loading...</h1>}.into_view()
+        }else{
+            let encoded: String = qr_code.get().unwrap().unwrap();
+            view! {
+                <img src=format!("data:image/png;base64,{}", encoded) alt="QR Code" />
+            }.into_view()
+        }}
     }
 }
 

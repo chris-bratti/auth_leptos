@@ -26,6 +26,8 @@ use crate::db::db_helper::does_user_exist;
 #[cfg(feature = "ssr")]
 use crate::db::db_helper::find_user_by_username;
 #[cfg(feature = "ssr")]
+use crate::db::db_helper::{enable_2fa_for_user, get_user_2fa_token};
+#[cfg(feature = "ssr")]
 use crate::db::db_helper::{
     get_verification_hash, is_user_verified, remove_reset_token, remove_verification_token,
     set_user_as_verified,
@@ -38,12 +40,10 @@ use crate::smtp::{self, generate_reset_email_body, generate_welcome_email_body};
 use actix_session::Session;
 #[cfg(feature = "ssr")]
 use leptos_actix::extract;
-#[cfg(feature = "ssr")]
 use serde::Deserialize;
-#[cfg(feature = "ssr")]
 use serde::Serialize;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
     InvalidCredentials,
     InternalServerError(String),
@@ -51,6 +51,7 @@ pub enum AuthError {
     PasswordConfirmationError,
     InvalidPassword,
     Error(String),
+    TOTPError,
 }
 
 // Implement std::fmt::Display for AppError
@@ -74,6 +75,9 @@ impl fmt::Display for AuthError {
             }
             AuthError::InvalidPassword => {
                 write!(f, "Password does not meet minimum requirements!")
+            }
+            AuthError::TOTPError => {
+                write!(f, "Error validating one time password!")
             }
         }
     }
@@ -101,6 +105,9 @@ impl fmt::Debug for AuthError {
             AuthError::InvalidPassword => {
                 write!(f, "Password does not meet minimum requirements!")
             }
+            AuthError::TOTPError => {
+                write!(f, "Invalid TOTP attempt")
+            }
         }
     }
 }
@@ -120,7 +127,23 @@ cfg_if! {
 
     use regex::Regex;
 
-fn get_totp_config(username: String, token: &String) -> TOTP {
+    enum EncryptionKey {
+        SmtpKey,
+        TwoFactorKey,
+    }
+
+    impl EncryptionKey {
+        pub fn get(&self) -> String {
+            let key = match self {
+                EncryptionKey::SmtpKey => "ENCRYPTION_KEY",
+                EncryptionKey::TwoFactorKey => "ENCRYPTION_KEY",
+            };
+
+            get_env_variable(key).expect("ENCRYPTION_KEY is unset!")
+        }
+    }
+
+fn get_totp_config(username: &String, token: &String) -> TOTP {
     TOTP::new(
         Algorithm::SHA1,
         6,
@@ -128,26 +151,25 @@ fn get_totp_config(username: String, token: &String) -> TOTP {
         30,
         Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
         Some("Leptos Auth".to_string()),
-        username,
+        username.to_string(),
     ).unwrap()
 }
 
-fn create_2fa_for_user(username: String) -> Vec<u8>{
-    //TODO: Check if user already has 2fa enabled
-    //let token = generate_token();
-    let token = "ThisisiareallygooToken".to_string();
-    let totp = get_totp_config(username, &token);
-    let encrypted_token = encrypt_string(&token).expect("Error encrypting token");
-    //TODO: Save token to DB
-    let qr_code = totp.get_qr_png().expect("Error generating QR code");
-    qr_code
+fn create_2fa_for_user(username: String) -> Result<String, AuthError>{
+    let token = generate_token();
+    let totp = get_totp_config(&username, &token);
+    let encrypted_token = encrypt_string(&token, EncryptionKey::TwoFactorKey).expect("Error encrypting token");
+    enable_2fa_for_user(&username, &encrypted_token).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    let qr_code = totp.get_qr_base64().expect("Error generating QR code");
+    Ok(qr_code)
 }
 
-fn get_totp(username: String) -> String{
-    let token = "ThisisiareallygooToken".to_string();
-    let totp = get_totp_config(username, &token);
-
-    totp.generate_current().unwrap()
+fn get_totp(username: String) -> Result<String, AuthError> {
+    let token = get_user_2fa_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    match token{
+        Some(token) => get_totp_config(&username, &token).generate_current().map_err(|err| AuthError::InternalServerError(err.to_string())),
+        None => Err(AuthError::TOTPError)
+    }
 }
 
 /// Hash password with Argon2
@@ -222,16 +244,16 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let name = user.expect("No user present!").first_name;
 
-    let user_email = decrypt_string(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
+    let user_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey).map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
     smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name);
 
     Ok(())
 }
 
-fn encrypt_string(data: &String) -> Result<String, aes_gcm::Error> {
+fn encrypt_string(data: &String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
 
-    let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
+    let encryption_key = encryption_key.get();
 
     let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
 
@@ -249,9 +271,9 @@ fn encrypt_string(data: &String) -> Result<String, aes_gcm::Error> {
     Ok(output)
 }
 
-fn decrypt_string(encrypted: String) -> Result<String, aes_gcm::Error> {
+fn decrypt_string(encrypted: String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
 
-    let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
+    let encryption_key = encryption_key.get();
 
     let encrypted_data = hex::decode(encrypted)
         .expect("failed to decode hex string into vec");
@@ -404,7 +426,8 @@ pub async fn signup(
     // Hash password
     let pass_hash = hash_string(password).expect("Error hashing password");
 
-    let encrypted_email = encrypt_string(&email).expect("Error encrypting email");
+    let encrypted_email =
+        encrypt_string(&email, EncryptionKey::SmtpKey).expect("Error encrypting email");
 
     // Create user info to interact with DB
     let user_info = UserInfo {
@@ -619,12 +642,26 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
     Ok(verified)
 }
 
+#[server(Enable2FA, "/api")]
+pub async fn enable_2fa(username: String) -> Result<String, ServerFnError<AuthError>> {
+    let qr_png =
+        create_2fa_for_user(username).map_err(|err| ServerFnError::WrappedServerError(err))?;
+    Ok(qr_png)
+}
+
+#[server(VerifyOTP, "/api")]
+pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnError<AuthError>> {
+    let totp = get_totp(username)?;
+
+    Ok(otp == totp)
+}
+
 #[cfg(test)]
 mod test_auth {
 
     use std::io::Cursor;
 
-    use crate::auth::{check_valid_password, decrypt_string, get_totp, verify_hash};
+    use crate::auth::{check_valid_password, decrypt_string, get_totp, verify_hash, EncryptionKey};
 
     use super::{create_2fa_for_user, encrypt_string, hash_string};
 
@@ -650,12 +687,13 @@ mod test_auth {
     #[test]
     fn test_email_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email = encrypt_string(&email).expect("There was an error encrypting");
+        let encrypted_email =
+            encrypt_string(&email, EncryptionKey::SmtpKey).expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
-        let decrypted_email =
-            decrypt_string(encrypted_email).expect("There was an error decrypting");
+        let decrypted_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+            .expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
     }
@@ -709,6 +747,6 @@ mod test_auth {
             .save("./qr.png")
             .expect("uh oh");
         */
-        println!("{}", get_totp(username));
+        //println!("{}", get_totp(username));
     }
 }

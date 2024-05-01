@@ -7,8 +7,8 @@ use crate::{auth::UserInfo, User};
 use super::{
     reset_token_table::{delete_db_reset_token, get_reset_token_from_db, save_reset_token_to_db},
     users_db::{
-        create_db_user, delete_db_user, get_user_from_username, set_db_user_as_verified,
-        update_db_password, update_db_username,
+        add_2fa_for_db_user, create_db_user, delete_db_user, get_user_from_username,
+        set_db_user_as_verified, update_db_password, update_db_username,
     },
     verification_tokens_table::{
         delete_db_verification_token, get_verification_token_from_db, save_verification_token_to_db,
@@ -20,6 +20,20 @@ pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
         get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
 
     Ok(db_user.is_some())
+}
+
+pub fn enable_2fa_for_user(username: &String, encrypted_token: &String) -> Result<(), DBError> {
+    add_2fa_for_db_user(username, encrypted_token).map_err(|err| DBError::InternalServerError(err))
+}
+
+pub fn get_user_2fa_token(username: &String) -> Result<Option<String>, DBError> {
+    let db_user =
+        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    match db_user {
+        Some(user) => Ok(user.two_factor_token),
+        None => Err(DBError::NotFound(username.to_string())),
+    }
 }
 
 pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> {
