@@ -5,6 +5,10 @@ body {
 	background-color: #1e1e1e;
 	color: #fff;
 }
+.dark-mode{
+	background-color: #1e1e1e;
+	color: #fff;
+}
 .container {
 	width: 100%;
 	height: 100vh;
@@ -12,6 +16,7 @@ body {
 	justify-content: center;
 	align-items: center;
 	flex-direction: column;
+	color:    #fff;
 }
 .button-container {
 	width: 100%;
@@ -20,6 +25,7 @@ body {
 	justify-content: center;
 	align-items: center;
 	flex-direction: column;
+	color:    #fff;
 }
 .heading {
 	font-size: 64px;
@@ -49,11 +55,34 @@ body {
 	border-radius: 8px;
 	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 	text-align: center;
+	color:    #fff;
 }
 .login-form h2 {
 	margin-bottom: 20px;
 	text-align: center;
 }
+::-webkit-input-placeholder { /* WebKit, Blink, Edge */
+    color:    #fff;
+}
+:-moz-placeholder { /* Mozilla Firefox 4 to 18 */
+   color:    #fff;
+   opacity:  1;
+}
+::-moz-placeholder { /* Mozilla Firefox 19+ */
+   color:    #fff;
+   opacity:  1;
+}
+:-ms-input-placeholder { /* Internet Explorer 10-11 */
+   color:    #fff;
+}
+::-ms-input-placeholder { /* Microsoft Edge */
+   color:    #fff;
+}
+
+::placeholder { /* Most modern browsers support this now. */
+   color:    #fff;
+}
+
 .login-form input[type="email"],
 .login-form input[type="text"],
 .login-form input[type="password"],

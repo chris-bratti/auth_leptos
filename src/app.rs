@@ -27,6 +27,7 @@ pub fn App() -> impl IntoView {
         <Title text="Welcome to Leptos"/>
 
         // content for this welcome page
+        <body class="dark-mode">
         <Router>
             <main>
                 <Routes>
@@ -51,6 +52,7 @@ pub fn App() -> impl IntoView {
                 </Routes>
             </main>
         </Router>
+        </body>
     }
 }
 
@@ -164,12 +166,12 @@ fn ResetPassword() -> impl IntoView {
                             >
                                 <div class="mb-3">
                                     <label class="form-label">
-                                        "Username"
                                         <input
                                             class="form-control"
                                             type="text"
                                             name="username"
                                             required=true
+                                            placeholder="Username"
                                         />
                                     </label>
                                 </div>
@@ -181,7 +183,6 @@ fn ResetPassword() -> impl IntoView {
                                 />
                                 <div class="mb-3">
                                     <label class="form-label">
-                                        "New Password"
                                         <input
                                             class="form-control"
                                             type="password"
@@ -190,12 +191,12 @@ fn ResetPassword() -> impl IntoView {
                                             minLength=8
                                             maxLength=16
                                             pattern=PASSWORD_PATTERN
+                                            placeholder="New Password"
                                         />
                                     </label>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label">
-                                        "Confirm New Password"
                                         <input
                                             class="form-control"
                                             type="password"
@@ -204,6 +205,7 @@ fn ResetPassword() -> impl IntoView {
                                             minLength=8
                                             maxLength=16
                                             pattern=PASSWORD_PATTERN
+                                            placeholder="Confirm New Password"
                                         />
                                     </label>
                                 </div>
@@ -267,15 +269,16 @@ fn Verify() -> impl IntoView {
                             .into_view()
                     } else {
                         view! {
-                            <ActionForm action=verify_user>
+                            <div class="container">
+                            <ActionForm class="login-form" action=verify_user>
                                 <div class="mb-3">
                                     <label class="form-label">
-                                        "Username"
                                         <input
                                             class="form-control"
                                             type="text"
                                             name="username"
                                             required=true
+                                            placeholder="Username"
                                         />
                                     </label>
                                 </div>
@@ -291,6 +294,7 @@ fn Verify() -> impl IntoView {
                                     value="Request Password Reset"
                                 />
                             </ActionForm>
+                            </div>
                         }
                             .into_view()
                     }
@@ -616,7 +620,7 @@ pub fn UserProfile() -> impl IntoView {
                                 <button class="button" on:click=move |_| set_update_password(true)>
                                     Update Password
                                 </button>
-                                <A class="button" href="/user">
+                                <A class="button" href="/">
                                     "Home"
                                 </A>
                             </div>
