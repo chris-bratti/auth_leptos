@@ -128,6 +128,7 @@ fn ForgotPassword() -> impl IntoView {
 #[component]
 fn EnableTwoFactor(
     user: ReadSignal<User>,
+    set_user: WriteSignal<User>,
     set_enable_two_factor: WriteSignal<bool>,
 ) -> impl IntoView {
     let qr_code = create_resource(
@@ -163,17 +164,21 @@ fn EnableTwoFactor(
                             <label class="form-label">
                                 <input
                                     class="form-control"
-                                    type="password"
+                                    type="text"
                                     name="otp"
                                     maxLength=6
                                     placeholder="OTP From Authenticator"
                                 />
                             </label>
                         </div>
-                        <input class="btn btn-primary" type="submit" value="Update Password"/>
+                        <input class="btn btn-primary" type="submit" value="Enable Two Factor"/>
                     </ActionForm>
                     {move || {
                         if value().is_some() && value().unwrap().unwrap() {
+                            set_user(User{
+                                two_factor: true,
+                                ..user.get()
+                            });
                             set_enable_two_factor(false);
                         }
                     }}
@@ -714,7 +719,7 @@ pub fn UserVerificationWrapper(children: ChildrenFn) -> impl IntoView {
 
 #[component]
 pub fn UserProfile() -> impl IntoView {
-    let (user, _): (ReadSignal<User>, WriteSignal<User>) =
+    let (user, set_user): (ReadSignal<User>, WriteSignal<User>) =
         expect_context::<UserContext>().user_signal;
     let (update_password, set_update_password) = create_signal(false);
     let (enable_two_factor, set_enable_two_factor) = create_signal(false);
@@ -734,9 +739,8 @@ pub fn UserProfile() -> impl IntoView {
             } else if enable_two_factor.get() {
                 view! {
                     <div class="container">
-                        <EnableTwoFactor user=user set_enable_two_factor=set_enable_two_factor/>
+                        <EnableTwoFactor user=user set_user=set_user set_enable_two_factor=set_enable_two_factor/>
                         <button class="button" on:click=move |_| { set_enable_two_factor(false) }>
-
                             Cancel
                         </button>
                     </div>

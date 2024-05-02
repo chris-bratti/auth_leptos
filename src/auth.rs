@@ -124,11 +124,11 @@ cfg_if! {
     impl EncryptionKey {
         pub fn get(&self) -> String {
             let key = match self {
-                EncryptionKey::SmtpKey => "ENCRYPTION_KEY",
-                EncryptionKey::TwoFactorKey => "ENCRYPTION_KEY",
+                EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
+                EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
             };
 
-            get_env_variable(key).expect("ENCRYPTION_KEY is unset!")
+            get_env_variable(key).expect("Encryption key is unset!")
         }
     }
 
@@ -147,8 +147,6 @@ fn get_totp_config(username: &String, token: &String) -> TOTP {
 fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError>{
     let token = generate_token();
     let totp = get_totp_config(&username, &token);
-    //let encrypted_token = encrypt_string(&token, EncryptionKey::TwoFactorKey).expect("Error encrypting token");
-    //enable_2fa_for_user(&username, &encrypted_token).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     let qr_code = totp.get_qr_base64().expect("Error generating QR code");
     Ok((qr_code, token))
 }
@@ -157,7 +155,7 @@ fn get_totp(username: &String) -> Result<String, AuthError> {
     let token = get_user_2fa_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token{
         Some(token) =>{
-            let decrypted_token = decrypt_string(token, EncryptionKey::SmtpKey).expect("Error decrypting string!");
+            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey).expect("Error decrypting string!");
             get_totp_config(&username, &decrypted_token).generate_current().map_err(|err| AuthError::InternalServerError(err.to_string()))
         },
         None => Err(AuthError::TOTPError)
@@ -342,7 +340,6 @@ async fn login(
     println!("User OTP: {}", two_factor);
 
     if two_factor {
-        println!("User has OTP enabled - returning {}", username);
         return Ok(Some((true, username)));
     }
 
@@ -356,7 +353,6 @@ async fn login(
     // Attach user to current session
     Identity::login(&req.extensions(), username.clone().into()).unwrap();
 
-    println!("Redirecting...");
     // Redirect
     leptos_actix::redirect("/user");
 
