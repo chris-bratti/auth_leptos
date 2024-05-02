@@ -165,6 +165,7 @@ fn EnableTwoFactor(
                                     class="form-control"
                                     type="password"
                                     name="otp"
+                                    maxLength=6
                                     placeholder="OTP From Authenticator"
                                 />
                             </label>
@@ -616,12 +617,15 @@ fn Auth() -> impl IntoView {
                                 match login_value.get() {
                                     Some(response) => {
                                         match response {
-                                            Ok(result) => match result{
-                                                Some((two_fa_enabled, uname)) =>{
-                                                    set_username(Some(uname));
-                                                    set_two_factor_enabled(two_fa_enabled);
-                                                    view! {}.into_view()
-                                                }None => view! {}.into_view()
+                                            Ok(result) => {
+                                                match result {
+                                                    Some((two_fa_enabled, uname)) => {
+                                                        set_username(Some(uname));
+                                                        set_two_factor_enabled(two_fa_enabled);
+                                                        view! {}.into_view()
+                                                    }
+                                                    None => view! {}.into_view(),
+                                                }
                                             }
                                             Err(server_err) => {
                                                 view! {
@@ -639,6 +643,8 @@ fn Auth() -> impl IntoView {
                             .into_view()
                     } else {
                         view! {
+                            // Displays any errors returned from the server
+
                             // Displays any errors returned from the server
 
                             <h1>Loading...</h1>
@@ -718,6 +724,10 @@ pub fn UserProfile() -> impl IntoView {
                 view! {
                     <div class="container">
                         <ChangePassword username=user.get().username/>
+                        <button class="button" on:click=move |_| { set_update_password(false) }>
+
+                            Cancel
+                        </button>
                     </div>
                 }
                     .into_view()
@@ -725,6 +735,10 @@ pub fn UserProfile() -> impl IntoView {
                 view! {
                     <div class="container">
                         <EnableTwoFactor user=user set_enable_two_factor=set_enable_two_factor/>
+                        <button class="button" on:click=move |_| { set_enable_two_factor(false) }>
+
+                            Cancel
+                        </button>
                     </div>
                 }
                     .into_view()
@@ -755,20 +769,30 @@ pub fn UserProfile() -> impl IntoView {
 
                                     Update Password
                                 </button>
-                                <button
-                                    class="button"
-                                    on:click=move |_| {
-                                        if enable_two_factor.get() {
-                                            set_enable_two_factor(false)
-                                        } else {
-                                            set_update_password(false);
-                                            set_enable_two_factor(true);
-                                        }
-                                    }
-                                >
+                                {move || {
+                                    if user.get().two_factor {
+                                        view! {}.into_view()
+                                    } else {
+                                        view! {
+                                            <button
+                                                class="button"
+                                                on:click=move |_| {
+                                                    if enable_two_factor.get() {
+                                                        set_enable_two_factor(false)
+                                                    } else {
+                                                        set_update_password(false);
+                                                        set_enable_two_factor(true);
+                                                    }
+                                                }
+                                            >
 
-                                    Enable Two Factor Authentication
-                                </button>
+                                                Enable Two Factor Authentication
+                                            </button>
+                                        }
+                                            .into_view()
+                                    }
+                                }}
+
                                 <A class="button" href="/">
                                     "Home"
                                 </A>
