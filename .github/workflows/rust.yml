@@ -26,7 +26,7 @@ jobs:
           
       - name: Init env file
         run: |
-          echo "ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
+          echo "SMTP_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
         working-directory: rec_temp
 
       - name: Install postgres (Linux)
