@@ -34,7 +34,6 @@ maud = {version = "0.26.0", optional=true}
 aes-gcm = "0.10.3"
 hex = "0.4.3"
 totp-rs = { version = "5.5.1", features = ["qr"], optional = true }
-image = "0.25.1"
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]

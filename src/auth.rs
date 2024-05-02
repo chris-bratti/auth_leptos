@@ -785,9 +785,14 @@ mod test_auth {
         let token = "TestSecretSuperSecret".to_string();
         let username = "exampleuser".to_string();
 
-        let totp = get_totp_config(&username, &token);
-        let qr_code = totp.get_qr_base64().expect("Error generating QR code");
+        let totp1 = get_totp_config(&username, &token);
 
-        println!("{}", qr_code);
+        let totp2 = get_totp_config(&username, &token);
+
+        let otp1 = totp1.generate_current().expect("Error generating OTP");
+
+        let otp2 = totp2.generate_current().expect("Error generating OTP");
+
+        assert_eq!(otp1, otp2);
     }
 }
