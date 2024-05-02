@@ -20,18 +20,7 @@ use cfg_if::cfg_if;
 use leptos::*;
 
 #[cfg(feature = "ssr")]
-use crate::db::db_helper::create_user;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::does_user_exist;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::find_user_by_username;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::{enable_2fa_for_user, get_user_2fa_token};
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::{
-    get_verification_hash, is_user_verified, remove_reset_token, remove_verification_token,
-    set_user_as_verified,
-};
+use crate::db::db_helper::*;
 #[cfg(feature = "ssr")]
 use crate::server::helpers::get_env_variable;
 #[cfg(feature = "ssr")]
@@ -155,19 +144,22 @@ fn get_totp_config(username: &String, token: &String) -> TOTP {
     ).unwrap()
 }
 
-fn create_2fa_for_user(username: String) -> Result<String, AuthError>{
+fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError>{
     let token = generate_token();
     let totp = get_totp_config(&username, &token);
-    let encrypted_token = encrypt_string(&token, EncryptionKey::TwoFactorKey).expect("Error encrypting token");
-    enable_2fa_for_user(&username, &encrypted_token).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    //let encrypted_token = encrypt_string(&token, EncryptionKey::TwoFactorKey).expect("Error encrypting token");
+    //enable_2fa_for_user(&username, &encrypted_token).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     let qr_code = totp.get_qr_base64().expect("Error generating QR code");
-    Ok(qr_code)
+    Ok((qr_code, token))
 }
 
 fn get_totp(username: String) -> Result<String, AuthError> {
     let token = get_user_2fa_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token{
-        Some(token) => get_totp_config(&username, &token).generate_current().map_err(|err| AuthError::InternalServerError(err.to_string())),
+        Some(token) =>{
+            let decrypted_token = decrypt_string(token, EncryptionKey::SmtpKey).expect("Error decrypting string!");
+            get_totp_config(&username, &decrypted_token).generate_current().map_err(|err| AuthError::InternalServerError(err.to_string()))
+        },
         None => Err(AuthError::TOTPError)
     }
 }
@@ -323,7 +315,8 @@ pub async fn get_session() -> Result<String, ServerFnError> {
 
 /// Server function to log in user
 #[server(Login, "/api")]
-async fn login(username: String, password: String) -> Result<(), ServerFnError<AuthError>> {
+async fn login(username: String, password: String) -> Result<bool, ServerFnError<AuthError>> {
+    println!("Logging in");
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
     // Retrieve pass hash from DB
@@ -347,12 +340,23 @@ async fn login(username: String, password: String) -> Result<(), ServerFnError<A
     };
 
     // Attach user to current session
-    Identity::login(&req.extensions(), username.into()).unwrap();
+    Identity::login(&req.extensions(), username.clone().into()).unwrap();
+
+    let two_factor = user_has_2fa_enabled(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    println!("User OTP: {}", two_factor);
+
+    if two_factor {
+        println!("User has OTP enabled");
+        return Ok(true);
+    }
 
     // Redirect
     leptos_actix::redirect("/user");
 
-    Ok(())
+    Ok(false)
 }
 
 /// Retrieves the User information based on username in current session
@@ -642,28 +646,59 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
     Ok(verified)
 }
 
-#[server(Enable2FA, "/api")]
-pub async fn enable_2fa(username: String) -> Result<String, ServerFnError<AuthError>> {
-    let qr_png =
+#[server(Generate2FA, "/api")]
+pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFnError<AuthError>> {
+    let (qr_code, token) =
         create_2fa_for_user(username).map_err(|err| ServerFnError::WrappedServerError(err))?;
-    Ok(qr_png)
+    Ok((qr_code, token))
+}
+
+#[server(Enable2FA, "/api")]
+pub async fn enable_2fa(
+    username: String,
+    two_factor_token: String,
+    otp: String,
+) -> Result<bool, ServerFnError<AuthError>> {
+    let totp = get_totp_config(&username, &two_factor_token);
+
+    let generated_token = totp.generate_current().expect("Error generating token");
+
+    if generated_token != otp {
+        return Err(ServerFnError::WrappedServerError(AuthError::TOTPError));
+    }
+
+    let encrypted_token = encrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
+        .expect("Error encrypting token");
+    enable_2fa_for_user(&username, &encrypted_token).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    Ok(true)
 }
 
 #[server(VerifyOTP, "/api")]
 pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnError<AuthError>> {
-    let totp = get_totp(username)?;
+    println!("Verifying OTP");
+    let otp = otp.trim().to_string();
+    let totp = get_totp(username)
+        .expect("Error validating token")
+        .trim()
+        .to_string();
 
-    Ok(otp == totp)
+    if otp.eq(&totp) {
+        leptos_actix::redirect("/user");
+        return Ok(true);
+    }
+
+    Err(ServerFnError::WrappedServerError(AuthError::TOTPError))
 }
 
 #[cfg(test)]
 mod test_auth {
 
-    use std::io::Cursor;
+    use crate::auth::{check_valid_password, decrypt_string, verify_hash, EncryptionKey};
 
-    use crate::auth::{check_valid_password, decrypt_string, get_totp, verify_hash, EncryptionKey};
-
-    use super::{create_2fa_for_user, encrypt_string, hash_string};
+    use super::{encrypt_string, get_totp_config, hash_string};
 
     #[test]
     fn test_password_hashing() {
@@ -738,15 +773,9 @@ mod test_auth {
         let token = "TestSecretSuperSecret".to_string();
         let username = "exampleuser".to_string();
 
-        //let qr = create_2fa_for_user(username.clone());
+        let totp = get_totp_config(&username, &token);
+        let qr_code = totp.get_qr_base64().expect("Error generating QR code");
 
-        //let cursor = Cursor::new(qr);
-        /*
-        image::load(cursor, image::ImageFormat::Png)
-            .unwrap()
-            .save("./qr.png")
-            .expect("uh oh");
-        */
-        //println!("{}", get_totp(username));
+        println!("{}", qr_code);
     }
 }

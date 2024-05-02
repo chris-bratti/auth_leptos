@@ -46,6 +46,16 @@ pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> 
     }
 }
 
+pub fn user_has_2fa_enabled(username: &String) -> Result<bool, DBError> {
+    let db_user =
+        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    match db_user {
+        Some(user) => Ok(user.two_factor),
+        None => Err(DBError::NotFound(username.clone())),
+    }
+}
+
 pub fn is_user_verified(username: &String) -> Result<bool, DBError> {
     let db_user =
         get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
@@ -135,6 +145,7 @@ pub fn create_user(user_info: UserInfo) -> Result<User, DBError> {
         first_name: db_user.first_name,
         last_name: db_user.last_name,
         username: db_user.username,
+        two_factor: false,
     };
 
     Ok(user)
@@ -150,6 +161,7 @@ pub fn find_user_by_username(username: &String) -> Result<Option<User>, DBError>
                 first_name: db_user.first_name,
                 last_name: db_user.last_name,
                 username: db_user.username,
+                two_factor: db_user.two_factor,
             };
             Ok(Some(user))
         }

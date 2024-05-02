@@ -1,9 +1,7 @@
 use crate::{auth::*, User};
-use image::{DynamicImage, ImageBuffer, ImageFormat};
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
-use std::io::Cursor;
 
 static PASSWORD_PATTERN: &str =
     "^.*(?=.{8,}).*(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@!:#$^;%&?]).+$";
@@ -30,31 +28,30 @@ pub fn App() -> impl IntoView {
 
         // content for this welcome page
         <body class="dark-mode">
-        <Router>
-            <main>
-                <Routes>
-                    <Route path="" view=HomePage/>
-                    <Route
-                        path="/user"
-                        view=|| {
-                            view! {
-                                <UserVerificationWrapper>
-                                    <UserProfile/>
-                                </UserVerificationWrapper>
+            <Router>
+                <main>
+                    <Routes>
+                        <Route path="" view=HomePage/>
+                        <Route
+                            path="/user"
+                            view=|| {
+                                view! {
+                                    <UserVerificationWrapper>
+                                        <UserProfile/>
+                                    </UserVerificationWrapper>
+                                }
                             }
-                        }
-                    />
+                        />
 
-                    <Route path="/signup" view=SignUp/>
-                    <Route path="/login" view=Auth/>
-                    <Route path="/forgotpassword" view=ForgotPassword/>
-                    <Route path="/reset/:generated_id" view=ResetPassword/>
-                    <Route path="/verify/:generated_id" view=Verify/>
-                    <Route path="/show" view=EnableTwoFactor/>
-                    <Route path="/*any" view=NotFound/>
-                </Routes>
-            </main>
-        </Router>
+                        <Route path="/signup" view=SignUp/>
+                        <Route path="/login" view=Auth/>
+                        <Route path="/forgotpassword" view=ForgotPassword/>
+                        <Route path="/reset/:generated_id" view=ResetPassword/>
+                        <Route path="/verify/:generated_id" view=Verify/>
+                        <Route path="/*any" view=NotFound/>
+                    </Routes>
+                </main>
+            </Router>
         </body>
     }
 }
@@ -129,20 +126,59 @@ fn ForgotPassword() -> impl IntoView {
 }
 
 #[component]
-fn EnableTwoFactor() -> impl IntoView {
+fn EnableTwoFactor(
+    user: ReadSignal<User>,
+    set_enable_two_factor: WriteSignal<bool>,
+) -> impl IntoView {
     let qr_code = create_resource(
         || (),
-        |_| async move { enable_2fa("TODO: change username".to_string()).await },
+        move |_| async move { generate_2fa(user.get().username.to_string()).await },
     );
+
+    let enable_2fa = create_server_action::<Enable2FA>();
     let loading = qr_code.loading();
+    let value = enable_2fa.value();
     view! {
-        {move || if loading(){
-            view! {<h1>loading...</h1>}.into_view()
-        }else{
-            let encoded: String = qr_code.get().unwrap().unwrap();
-            view! {
-                <img src=format!("data:image/png;base64,{}", encoded) alt="QR Code" />
-            }.into_view()
+        {move || {
+            if loading() {
+                view! { <h1>loading...</h1> }.into_view()
+            } else {
+                let (encoded, token) = qr_code.get().unwrap().unwrap();
+                view! {
+                    <ActionForm class="login-form" action=enable_2fa>
+                        <img src=format!("data:image/png;base64,{}", encoded) alt="QR Code"/>
+                        <input
+                            class="form-control"
+                            type="hidden"
+                            name="username"
+                            value=user.get().username
+                        />
+                        <input
+                            class="form-control"
+                            type="hidden"
+                            name="two_factor_token"
+                            value=token
+                        />
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <input
+                                    class="form-control"
+                                    type="password"
+                                    name="otp"
+                                    placeholder="OTP From Authenticator"
+                                />
+                            </label>
+                        </div>
+                        <input class="btn btn-primary" type="submit" value="Update Password"/>
+                    </ActionForm>
+                    {move || {
+                        if value().is_some() && value().unwrap().unwrap() {
+                            set_enable_two_factor(false);
+                        }
+                    }}
+                }
+                    .into_view()
+            }
         }}
     }
 }
@@ -292,30 +328,30 @@ fn Verify() -> impl IntoView {
                     } else {
                         view! {
                             <div class="container">
-                            <ActionForm class="login-form" action=verify_user>
-                                <div class="mb-3">
-                                    <label class="form-label">
-                                        <input
-                                            class="form-control"
-                                            type="text"
-                                            name="username"
-                                            required=true
-                                            placeholder="Username"
-                                        />
-                                    </label>
-                                </div>
-                                <input
-                                    class="form-control"
-                                    type="hidden"
-                                    name="verification_token"
-                                    value=generated_id()
-                                />
-                                <input
-                                    class="btn btn-primary"
-                                    type="submit"
-                                    value="Request Password Reset"
-                                />
-                            </ActionForm>
+                                <ActionForm class="login-form" action=verify_user>
+                                    <div class="mb-3">
+                                        <label class="form-label">
+                                            <input
+                                                class="form-control"
+                                                type="text"
+                                                name="username"
+                                                required=true
+                                                placeholder="Username"
+                                            />
+                                        </label>
+                                    </div>
+                                    <input
+                                        class="form-control"
+                                        type="hidden"
+                                        name="verification_token"
+                                        value=generated_id()
+                                    />
+                                    <input
+                                        class="btn btn-primary"
+                                        type="submit"
+                                        value="Request Password Reset"
+                                    />
+                                </ActionForm>
                             </div>
                         }
                             .into_view()
@@ -495,16 +531,54 @@ fn Auth() -> impl IntoView {
 
     let pending = login.pending();
 
+    let verify_otp = create_server_action::<VerifyOTP>();
+
+    let _verify_otp_value = verify_otp.value();
+
+    let (two_factor_enabled, set_two_factor_enabled) = create_signal(false);
+
+    let (username, set_username) = create_signal("".to_string());
+
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
+        <div class="container">
             {move || {
                 if pending() {
                     view! { <h1>Logging in...</h1> }.into_view()
                 } else {
+                    if two_factor_enabled() {
+                        view! {
+                            <ActionForm class="login-form" action=verify_otp>
+                                <input class="form-control" type="hidden" name="username" value=username.get()/>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <input
+                                            class="form-control"
+                                            type="text"
+                                            name="otp"
+                                            placeholder="OTP"
+                                        />
+                                    </label>
+                                </div>
+                                <input class="btn btn-primary" type="submit" value="Verify OTP"/>
+                            </ActionForm>
+                            {move || {
+                                match _verify_otp_value.get() {
+                                    Some(response) => {
+                                        view! {<p>{format!("{:#?}", response)}</p>}.into_view()
+                                    }
+                                    None => view! {}.into_view(),
+                                }
+                            }}
+                        }.into_view()
+                    }else{
                     view! {
-                        <div class="container">
                             <h1>"Welcome to Leptos!"</h1>
-                            <ActionForm class="login-form" action=login>
+                            <ActionForm class="login-form" action=login on:submit=move |ev| {
+                                let data = UpdatePassword::from_event(&ev);
+                                let data_values = data.unwrap();
+                                set_username(data_values.username);
+                            }>
                                 <div class="mb-3">
                                     <label class="form-label">
                                         <input
@@ -535,7 +609,9 @@ fn Auth() -> impl IntoView {
                                 match login_value.get() {
                                     Some(response) => {
                                         match response {
-                                            Ok(_) => view! {}.into_view(),
+                                            Ok(two_fa) => {
+                                                set_two_factor_enabled(two_fa);
+                                                view! {}.into_view()},
                                             Err(server_err) => {
                                                 view! {
                                                     // Displays any errors returned from the server
@@ -549,12 +625,13 @@ fn Auth() -> impl IntoView {
                                 }
                             }}
 
-                        </div>
+
                     }
                         .into_view()
                 }
+                }
             }}
-
+            </div>
         </div>
     }
 }
@@ -618,12 +695,20 @@ pub fn UserProfile() -> impl IntoView {
     let (user, _): (ReadSignal<User>, WriteSignal<User>) =
         expect_context::<UserContext>().user_signal;
     let (update_password, set_update_password) = create_signal(false);
+    let (enable_two_factor, set_enable_two_factor) = create_signal(false);
     view! {
         {move || {
             if update_password.get() {
                 view! {
                     <div class="container">
                         <ChangePassword username=user.get().username/>
+                    </div>
+                }
+                    .into_view()
+            } else if enable_two_factor.get() {
+                view! {
+                    <div class="container">
+                        <EnableTwoFactor user=user set_enable_two_factor=set_enable_two_factor/>
                     </div>
                 }
                     .into_view()
@@ -637,10 +722,34 @@ pub fn UserProfile() -> impl IntoView {
                                     user.get().first_name,
                                     user.get().last_name,
                                 )}
+
                             </div>
                             <div class="buttons">
-                                <button class="button" on:click=move |_| set_update_password(true)>
+                                <button
+                                    class="button"
+                                    on:click=move |_| {
+                                        if update_password.get() {
+                                            set_update_password(false)
+                                        } else {
+                                            set_enable_two_factor(false);
+                                            set_update_password(true);
+                                        }
+                                    }
+                                >
                                     Update Password
+                                </button>
+                                <button
+                                    class="button"
+                                    on:click=move |_| {
+                                        if enable_two_factor.get() {
+                                            set_enable_two_factor(false)
+                                        } else {
+                                            set_update_password(false);
+                                            set_enable_two_factor(true);
+                                        }
+                                    }
+                                >
+                                    Enable Two Factor Authentication
                                 </button>
                                 <A class="button" href="/">
                                     "Home"
