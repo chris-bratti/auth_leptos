@@ -6,7 +6,9 @@ CREATE TABLE users (
     username text NOT NULL,
     pass_hash text NOT NULL,
     email text NOT NULL,
-    verified boolean NOT NULL
+    verified boolean NOT NULL,
+    two_factor boolean NOT NULL,
+    two_factor_token text
 );
 
 CREATE TABLE verification_tokens (

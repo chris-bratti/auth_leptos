@@ -15,3 +15,5 @@ playwright/.cache/
 .env
 
 rustc-ice-*
+
+.vscode

@@ -20,16 +20,7 @@ use cfg_if::cfg_if;
 use leptos::*;
 
 #[cfg(feature = "ssr")]
-use crate::db::db_helper::create_user;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::does_user_exist;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::find_user_by_username;
-#[cfg(feature = "ssr")]
-use crate::db::db_helper::{
-    get_verification_hash, is_user_verified, remove_reset_token, remove_verification_token,
-    set_user_as_verified,
-};
+use crate::db::db_helper::*;
 #[cfg(feature = "ssr")]
 use crate::server::helpers::get_env_variable;
 #[cfg(feature = "ssr")]
@@ -38,12 +29,10 @@ use crate::smtp::{self, generate_reset_email_body, generate_welcome_email_body};
 use actix_session::Session;
 #[cfg(feature = "ssr")]
 use leptos_actix::extract;
-#[cfg(feature = "ssr")]
 use serde::Deserialize;
-#[cfg(feature = "ssr")]
 use serde::Serialize;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
     InvalidCredentials,
     InternalServerError(String),
@@ -51,6 +40,7 @@ pub enum AuthError {
     PasswordConfirmationError,
     InvalidPassword,
     Error(String),
+    TOTPError,
 }
 
 // Implement std::fmt::Display for AppError
@@ -74,6 +64,9 @@ impl fmt::Display for AuthError {
             }
             AuthError::InvalidPassword => {
                 write!(f, "Password does not meet minimum requirements!")
+            }
+            AuthError::TOTPError => {
+                write!(f, "Error validating one time password!")
             }
         }
     }
@@ -101,6 +94,9 @@ impl fmt::Debug for AuthError {
             AuthError::InvalidPassword => {
                 write!(f, "Password does not meet minimum requirements!")
             }
+            AuthError::TOTPError => {
+                write!(f, "Invalid TOTP attempt")
+            }
         }
     }
 }
@@ -115,7 +111,56 @@ impl FromStr for AuthError {
 cfg_if! {
     if #[cfg(feature = "ssr")] {
 
+    use totp_rs::{Algorithm, TOTP, Secret};
+
+
     use regex::Regex;
+
+    enum EncryptionKey {
+        SmtpKey,
+        TwoFactorKey,
+    }
+
+    impl EncryptionKey {
+        pub fn get(&self) -> String {
+            let key = match self {
+                EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
+                EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
+            };
+
+            get_env_variable(key).expect("Encryption key is unset!")
+        }
+    }
+
+fn get_totp_config(username: &String, token: &String) -> TOTP {
+    TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
+        Some("Leptos Auth".to_string()),
+        username.to_string(),
+    ).unwrap()
+}
+
+fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError>{
+    let token = generate_token();
+    let totp = get_totp_config(&username, &token);
+    let qr_code = totp.get_qr_base64().expect("Error generating QR code");
+    Ok((qr_code, token))
+}
+
+fn get_totp(username: &String) -> Result<String, AuthError> {
+    let token = get_user_2fa_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    match token{
+        Some(token) =>{
+            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey).expect("Error decrypting string!");
+            get_totp_config(&username, &decrypted_token).generate_current().map_err(|err| AuthError::InternalServerError(err.to_string()))
+        },
+        None => Err(AuthError::TOTPError)
+    }
+}
 
 /// Hash password with Argon2
 fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
@@ -189,16 +234,16 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let name = user.expect("No user present!").first_name;
 
-    let user_email = decrypt_string(encrypted_email).map_err(|_| ServerFnError::new("Error decrypting email"))?;
+    let user_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey).map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
     smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name);
 
     Ok(())
 }
 
-fn encrypt_string(data: &String) -> Result<String, aes_gcm::Error> {
+fn encrypt_string(data: &String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
 
-    let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
+    let encryption_key = encryption_key.get();
 
     let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
 
@@ -216,9 +261,9 @@ fn encrypt_string(data: &String) -> Result<String, aes_gcm::Error> {
     Ok(output)
 }
 
-fn decrypt_string(encrypted: String) -> Result<String, aes_gcm::Error> {
+fn decrypt_string(encrypted: String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
 
-    let encryption_key = get_env_variable("ENCRYPTION_KEY").expect("ENCRYPTION_KEY is unset!");
+    let encryption_key = encryption_key.get();
 
     let encrypted_data = hex::decode(encrypted)
         .expect("failed to decode hex string into vec");
@@ -268,7 +313,11 @@ pub async fn get_session() -> Result<String, ServerFnError> {
 
 /// Server function to log in user
 #[server(Login, "/api")]
-async fn login(username: String, password: String) -> Result<(), ServerFnError<AuthError>> {
+async fn login(
+    username: String,
+    password: String,
+) -> Result<Option<(bool, String)>, ServerFnError<AuthError>> {
+    println!("Logging in");
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
     // Retrieve pass hash from DB
@@ -284,6 +333,16 @@ async fn login(username: String, password: String) -> Result<(), ServerFnError<A
         ));
     }
 
+    let two_factor = user_has_2fa_enabled(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    println!("User OTP: {}", two_factor);
+
+    if two_factor {
+        return Ok(Some((true, username)));
+    }
+
     // Get current context
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
         return Err(ServerFnError::WrappedServerError(
@@ -292,12 +351,12 @@ async fn login(username: String, password: String) -> Result<(), ServerFnError<A
     };
 
     // Attach user to current session
-    Identity::login(&req.extensions(), username.into()).unwrap();
+    Identity::login(&req.extensions(), username.clone().into()).unwrap();
 
     // Redirect
     leptos_actix::redirect("/user");
 
-    Ok(())
+    Ok(None)
 }
 
 /// Retrieves the User information based on username in current session
@@ -371,7 +430,8 @@ pub async fn signup(
     // Hash password
     let pass_hash = hash_string(password).expect("Error hashing password");
 
-    let encrypted_email = encrypt_string(&email).expect("Error encrypting email");
+    let encrypted_email =
+        encrypt_string(&email, EncryptionKey::SmtpKey).expect("Error encrypting email");
 
     // Create user info to interact with DB
     let user_info = UserInfo {
@@ -586,12 +646,71 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
     Ok(verified)
 }
 
+#[server(Generate2FA, "/api")]
+pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFnError<AuthError>> {
+    let (qr_code, token) =
+        create_2fa_for_user(username).map_err(|err| ServerFnError::WrappedServerError(err))?;
+    Ok((qr_code, token))
+}
+
+#[server(Enable2FA, "/api")]
+pub async fn enable_2fa(
+    username: String,
+    two_factor_token: String,
+    otp: String,
+) -> Result<bool, ServerFnError<AuthError>> {
+    let totp = get_totp_config(&username, &two_factor_token);
+
+    let generated_token = totp.generate_current().expect("Error generating token");
+
+    if generated_token != otp {
+        return Err(ServerFnError::WrappedServerError(AuthError::TOTPError));
+    }
+
+    let encrypted_token = encrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
+        .expect("Error encrypting token");
+    enable_2fa_for_user(&username, &encrypted_token).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    Ok(true)
+}
+
+#[server(VerifyOTP, "/api")]
+pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnError<AuthError>> {
+    println!("Verifying OTP for {}", username);
+    let otp = otp.trim().to_string();
+    let totp = get_totp(&username)
+        .expect("Error validating token")
+        .trim()
+        .to_string();
+
+    if !otp.eq(&totp) {
+        return Err(ServerFnError::WrappedServerError(AuthError::TOTPError));
+    }
+
+    // Get current context
+    let Some(req) = use_context::<actix_web::HttpRequest>() else {
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InternalServerError("No HttpRequest found in current context".to_string()),
+        ));
+    };
+
+    // Attach user to current session
+    Identity::login(&req.extensions(), username.clone().into()).unwrap();
+
+    // Redirect
+    leptos_actix::redirect("/user");
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod test_auth {
 
-    use crate::auth::{check_valid_password, decrypt_string, verify_hash};
+    use crate::auth::{check_valid_password, decrypt_string, verify_hash, EncryptionKey};
 
-    use super::{encrypt_string, hash_string};
+    use super::{encrypt_string, get_totp_config, hash_string};
 
     #[test]
     fn test_password_hashing() {
@@ -615,12 +734,13 @@ mod test_auth {
     #[test]
     fn test_email_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email = encrypt_string(&email).expect("There was an error encrypting");
+        let encrypted_email =
+            encrypt_string(&email, EncryptionKey::SmtpKey).expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
-        let decrypted_email =
-            decrypt_string(encrypted_email).expect("There was an error decrypting");
+        let decrypted_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+            .expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
     }
@@ -658,5 +778,21 @@ mod test_auth {
         let invalid_password = String::from("noNumbers!!");
 
         assert!(!check_valid_password(&invalid_password));
+    }
+
+    #[test]
+    fn test_totp() {
+        let token = "TestSecretSuperSecret".to_string();
+        let username = "exampleuser".to_string();
+
+        let totp1 = get_totp_config(&username, &token);
+
+        let totp2 = get_totp_config(&username, &token);
+
+        let otp1 = totp1.generate_current().expect("Error generating OTP");
+
+        let otp2 = totp2.generate_current().expect("Error generating OTP");
+
+        assert_eq!(otp1, otp2);
     }
 }

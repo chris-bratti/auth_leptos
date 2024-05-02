@@ -14,6 +14,8 @@ pub struct DBUser {
     pub email: String,
     pub pass_hash: String,
     pub verified: bool,
+    pub two_factor: bool,
+    pub two_factor_token: Option<String>,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
@@ -61,4 +63,5 @@ pub struct NewDBUser<'a> {
     pub email: &'a str,
     pub pass_hash: &'a str,
     pub verified: &'a bool,
+    pub two_factor: &'a bool,
 }
