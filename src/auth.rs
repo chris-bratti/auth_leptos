@@ -153,7 +153,7 @@ fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError>{
     Ok((qr_code, token))
 }
 
-fn get_totp(username: String) -> Result<String, AuthError> {
+fn get_totp(username: &String) -> Result<String, AuthError> {
     let token = get_user_2fa_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token{
         Some(token) =>{
@@ -315,7 +315,10 @@ pub async fn get_session() -> Result<String, ServerFnError> {
 
 /// Server function to log in user
 #[server(Login, "/api")]
-async fn login(username: String, password: String) -> Result<bool, ServerFnError<AuthError>> {
+async fn login(
+    username: String,
+    password: String,
+) -> Result<Option<(bool, String)>, ServerFnError<AuthError>> {
     println!("Logging in");
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
@@ -332,6 +335,17 @@ async fn login(username: String, password: String) -> Result<bool, ServerFnError
         ));
     }
 
+    let two_factor = user_has_2fa_enabled(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    println!("User OTP: {}", two_factor);
+
+    if two_factor {
+        println!("User has OTP enabled - returning {}", username);
+        return Ok(Some((true, username)));
+    }
+
     // Get current context
     let Some(req) = use_context::<actix_web::HttpRequest>() else {
         return Err(ServerFnError::WrappedServerError(
@@ -342,21 +356,11 @@ async fn login(username: String, password: String) -> Result<bool, ServerFnError
     // Attach user to current session
     Identity::login(&req.extensions(), username.clone().into()).unwrap();
 
-    let two_factor = user_has_2fa_enabled(&username).map_err(|err| {
-        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
-    })?;
-
-    println!("User OTP: {}", two_factor);
-
-    if two_factor {
-        println!("User has OTP enabled");
-        return Ok(true);
-    }
-
+    println!("Redirecting...");
     // Redirect
     leptos_actix::redirect("/user");
 
-    Ok(false)
+    Ok(None)
 }
 
 /// Retrieves the User information based on username in current session
@@ -678,19 +682,31 @@ pub async fn enable_2fa(
 
 #[server(VerifyOTP, "/api")]
 pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnError<AuthError>> {
-    println!("Verifying OTP");
+    println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
-    let totp = get_totp(username)
+    let totp = get_totp(&username)
         .expect("Error validating token")
         .trim()
         .to_string();
 
-    if otp.eq(&totp) {
-        leptos_actix::redirect("/user");
-        return Ok(true);
+    if !otp.eq(&totp) {
+        return Err(ServerFnError::WrappedServerError(AuthError::TOTPError));
     }
 
-    Err(ServerFnError::WrappedServerError(AuthError::TOTPError))
+    // Get current context
+    let Some(req) = use_context::<actix_web::HttpRequest>() else {
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InternalServerError("No HttpRequest found in current context".to_string()),
+        ));
+    };
+
+    // Attach user to current session
+    Identity::login(&req.extensions(), username.clone().into()).unwrap();
+
+    // Redirect
+    leptos_actix::redirect("/user");
+
+    Ok(true)
 }
 
 #[cfg(test)]

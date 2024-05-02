@@ -537,19 +537,21 @@ fn Auth() -> impl IntoView {
 
     let (two_factor_enabled, set_two_factor_enabled) = create_signal(false);
 
-    let (username, set_username) = create_signal("".to_string());
+    let (username, set_username) = create_signal(None);
 
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
-        <div class="container">
-            {move || {
-                if pending() {
-                    view! { <h1>Logging in...</h1> }.into_view()
-                } else {
-                    if two_factor_enabled() {
+            <div class="container">
+                {move || {
+                    if two_factor_enabled() && username.get().is_some() {
                         view! {
                             <ActionForm class="login-form" action=verify_otp>
-                                <input class="form-control" type="hidden" name="username" value=username.get()/>
+                                <input
+                                    class="form-control"
+                                    type="hidden"
+                                    name="username"
+                                    value=username.get().unwrap()
+                                />
                                 <div class="mb-3">
                                     <label class="form-label">
                                         <input
@@ -565,20 +567,17 @@ fn Auth() -> impl IntoView {
                             {move || {
                                 match _verify_otp_value.get() {
                                     Some(response) => {
-                                        view! {<p>{format!("{:#?}", response)}</p>}.into_view()
+                                        view! { <p>{format!("{:#?}", response)}</p> }.into_view()
                                     }
                                     None => view! {}.into_view(),
                                 }
                             }}
-                        }.into_view()
-                    }else{
-                    view! {
+                        }
+                            .into_view()
+                    } else if !two_factor_enabled() && username.get().is_none() {
+                        view! {
                             <h1>"Welcome to Leptos!"</h1>
-                            <ActionForm class="login-form" action=login on:submit=move |ev| {
-                                let data = UpdatePassword::from_event(&ev);
-                                let data_values = data.unwrap();
-                                set_username(data_values.username);
-                            }>
+                            <ActionForm class="login-form" action=login>
                                 <div class="mb-3">
                                     <label class="form-label">
                                         <input
@@ -606,12 +605,24 @@ fn Auth() -> impl IntoView {
                             </ActionForm>
 
                             {move || {
+                                if pending() {
+                                    view! { <p>Logging in...</p> }.into_view()
+                                } else {
+                                    view! {}.into_view()
+                                }
+                            }}
+
+                            {move || {
                                 match login_value.get() {
                                     Some(response) => {
                                         match response {
-                                            Ok(two_fa) => {
-                                                set_two_factor_enabled(two_fa);
-                                                view! {}.into_view()},
+                                            Ok(result) => match result{
+                                                Some((two_fa_enabled, uname)) =>{
+                                                    set_username(Some(uname));
+                                                    set_two_factor_enabled(two_fa_enabled);
+                                                    view! {}.into_view()
+                                                }None => view! {}.into_view()
+                                            }
                                             Err(server_err) => {
                                                 view! {
                                                     // Displays any errors returned from the server
@@ -624,13 +635,18 @@ fn Auth() -> impl IntoView {
                                     None => view! {}.into_view(),
                                 }
                             }}
+                        }
+                            .into_view()
+                    } else {
+                        view! {
+                            // Displays any errors returned from the server
 
-
+                            <h1>Loading...</h1>
+                        }
+                            .into_view()
                     }
-                        .into_view()
-                }
-                }
-            }}
+                }}
+
             </div>
         </div>
     }
@@ -736,6 +752,7 @@ pub fn UserProfile() -> impl IntoView {
                                         }
                                     }
                                 >
+
                                     Update Password
                                 </button>
                                 <button
@@ -749,6 +766,7 @@ pub fn UserProfile() -> impl IntoView {
                                         }
                                     }
                                 >
+
                                     Enable Two Factor Authentication
                                 </button>
                                 <A class="button" href="/">
