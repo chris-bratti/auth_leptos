@@ -50,4 +50,6 @@ SMTP_ENCRYPTION_KEY="anothersecureandverysecretencryptionkey"
 MASTER_USER=master
 
 MASTER_PASS=verysecretpassword
+
+AUTH_LEPTOS_URL=https://amazingsite.com
 ```

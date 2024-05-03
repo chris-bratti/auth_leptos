@@ -1,4 +1,6 @@
 #[cfg(feature = "ssr")]
+use crate::server::helpers::get_env_variable;
+#[cfg(feature = "ssr")]
 use lettre::message::header::{self};
 #[cfg(feature = "ssr")]
 use lettre::message::{MultiPart, SinglePart};
@@ -13,7 +15,9 @@ use maud::html;
 pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> String {
     // The recipient's name. We might obtain this from a form or their email address.
     // Create the html we want to send.
-    let reset_link = format!("http://localhost:3000/reset/{}", reset_token);
+
+    let uri = get_env_variable("AUTH_LEPTOS_URL").expect("AUTH_LEPTOS_URL not set!");
+    let reset_link = format!("{}/reset/{}", uri, reset_token);
 
     // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
     html! {
@@ -71,7 +75,8 @@ pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> S
 
 #[cfg(feature = "ssr")]
 pub fn generate_welcome_email_body(first_name: &String, verification_token: &String) -> String {
-    let verification_link = format!("http://localhost:3000/verify/{}", verification_token);
+    let uri = get_env_variable("AUTH_LEPTOS_URL").expect("AUTH_LEPTOS_URL not set!");
+    let verification_link = format!("{}/verify/{}", uri, verification_token);
     // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
     html! {
         head {

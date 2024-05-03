@@ -15,6 +15,7 @@ services:
       SMTP_KEY: "${SMTP_KEY}"
       TWO_FACTOR_KEY: "${TWO_FACTOR_KEY}"
       SMTP_ENCRYPTION_KEY: "${SMTP_ENCRYPTION_KEY}"
+      AUTH_LEPTOS_URL: ${AUTH_LEPTOS_URL}
       PGPASSWORD: ${MASTER_PASS}
     restart: unless-stopped
     depends_on:
