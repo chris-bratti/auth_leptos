@@ -8,7 +8,7 @@ else
 fi
 
 if psql -h leptos_postgres -U master -b daily -tc  "SELECT 1 from information_schema.tables where table_name = 'users'" | grep -q 1; then
-    echo "Database already exists"
+    echo "Tables already exist"
 else
     psql -h leptos_postgres -U master -b daily -f init.sql
 fi

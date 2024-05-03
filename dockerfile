@@ -13,15 +13,13 @@ RUN cp cargo-binstall /usr/local/cargo/bin
 # Install cargo-leptos
 RUN cargo binstall cargo-leptos -y
 
-RUN cargo install diesel_cli --no-default-features --features postgres
-
 # Add the WASM target
 RUN rustup target add wasm32-unknown-unknown
 
 # Make an /app dir, which everything will eventually live in
 RUN mkdir -p /app
 WORKDIR /app
-COPY Cargo.toml Cargo.lock diesel.toml init-db.sh init.sql ./
+COPY Cargo.toml Cargo.lock init-db.sh init.sql ./
 COPY assets ./assets
 COPY end2end ./end2end
 COPY migrations ./migrations
@@ -41,8 +39,6 @@ RUN apt-get update -y \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
 
-# -- NB: update binary name from "leptos_start" to match your app name in Cargo.toml --
-COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/cargo/bin/diesel
 # Copy the server binary to the /app directory
 COPY --from=builder /app/target/release/auth_leptos /app/
 
@@ -54,8 +50,6 @@ COPY --from=builder /app/Cargo.toml /app/
 
 COPY --from=builder /app/migrations /app/migrations
 
-COPY --from=builder /app/diesel.toml /app/
-
 COPY --from=builder /app/init-db.sh /app/init-db.sh
 
 COPY --from=builder /app/init.sql /app/init.sql
@@ -66,7 +60,5 @@ ENV LEPTOS_SITE_ADDR="0.0.0.0:3000"
 ENV LEPTOS_SITE_ROOT="site"
 EXPOSE 3000
 
-# -- NB: update binary name from "leptos_start" to match your app name in Cargo.toml --
-# Run the server
+# Initialize DB and start server
 ENTRYPOINT [ "/app/init-db.sh" ]
-#CMD ["/app/auth_leptos"]
