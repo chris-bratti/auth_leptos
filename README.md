@@ -5,6 +5,7 @@
 ### Security
 - Secure password & reset token hashing with Argon2
 - Secure email encryption with AES256-GCM
+- Two factor authentication with Time-Based One Time Passwords (TOTP)
 - User verification through securely generated email links
 - Verification & password reset tokens expire after 20 minutes
 - User-only pages - ensures only logged in and verified users can access certain pages
@@ -12,6 +13,7 @@
 
 ### User friendly
 - Easy to navigate UI built with Leptos
+- Easy two factor authentication enrollment with QR code based secrets
 - Password reset capabilities - generates a secure reset token sent to user's email
 - Session storage using Actix Web & Redis - user's sessions are persisted to avoid needless re-authentication
 
@@ -30,5 +32,22 @@
 - [Lettre](https://github.com/lettre/lettre) - a mailer library for Rust
 - [Maud](https://github.com/lambda-fairy/maud) - an HTML template engine for Rust
 - [RustCrypt Argon2](https://docs.rs/argon2/latest/argon2/) - a Pure Rust implementation of the Argon2 password hashing function.
+- [totp-rs](https://github.com/constantoine/totp-rs) - RFC-compliant TOTP implementation with QR code generation
 
-Still a work in progress!
+
+## Dockerized!
+
+This project can be run in a docker container. Checkout the docker-compose.yml file! You will need to supply a few secrets in an `.env` file, here is a good example:
+```
+FROM_EMAIL=noreply.example@gmail.com
+
+SMTP_KEY="secret key here"
+
+TWO_FACTOR_KEY="supersecretandsecureencryptionkey"
+
+SMTP_ENCRYPTION_KEY="anothersecureandverysecretencryptionkey"
+
+MASTER_USER=master
+
+MASTER_PASS=verysecretpassword
+```
