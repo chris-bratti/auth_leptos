@@ -24,7 +24,7 @@ pub fn App() -> impl IntoView {
         />
 
         // sets the document title
-        <Title text="Welcome to Leptos"/>
+        <Title text="Welcome to Auth Leptos"/>
 
         // content for this welcome page
         <body class="dark-mode">
@@ -62,7 +62,7 @@ fn HomePage() -> impl IntoView {
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
             <div class="button-container">
-                <div class="heading">"Welcome to Leptos!"</div>
+                <div class="heading">"Welcome to Auth Leptos!"</div>
                 <div class="buttons">
                     <A href="/login" class="button">
                         Login
