@@ -41,6 +41,7 @@ pub enum AuthError {
     InvalidPassword,
     Error(String),
     TOTPError,
+    AccountLocked,
 }
 
 // Implement std::fmt::Display for AppError
@@ -67,6 +68,9 @@ impl fmt::Display for AuthError {
             }
             AuthError::TOTPError => {
                 write!(f, "Error validating one time password!")
+            }
+            AuthError::AccountLocked => {
+                write!(f, "Your account has been locked due to invalid attempts. Please try again later or reset your password")
             }
         }
     }
@@ -96,6 +100,9 @@ impl fmt::Debug for AuthError {
             }
             AuthError::TOTPError => {
                 write!(f, "Invalid TOTP attempt")
+            }
+            AuthError::AccountLocked => {
+                write!(f, "Account locked")
             }
         }
     }
@@ -139,7 +146,7 @@ fn get_totp_config(username: &String, token: &String) -> TOTP {
         1,
         30,
         Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
-        Some("Leptos Auth".to_string()),
+        Some("Auth Leptos".to_string()),
         username.to_string(),
     ).unwrap()
 }
@@ -320,6 +327,14 @@ async fn login(
     println!("Logging in");
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
+
+    if is_user_locked(&username)
+        .map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidCredentials))?
+    {
+        println!("User is locked");
+        return Err(ServerFnError::WrappedServerError(AuthError::AccountLocked));
+    }
+
     // Retrieve pass hash from DB
     let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
         .map_err(|_err| ServerFnError::WrappedServerError(AuthError::InvalidCredentials));
@@ -328,6 +343,12 @@ async fn login(
     let verified_result = verify_hash(&password, &pass_result?);
 
     if verified_result.is_err() || !verified_result.unwrap() {
+        let user_not_locked =
+            failed_login_attempt(&username).expect("Error marking login attempt as failed");
+
+        if !user_not_locked {
+            return Err(ServerFnError::WrappedServerError(AuthError::AccountLocked));
+        }
         return Err(ServerFnError::WrappedServerError(
             AuthError::InvalidCredentials,
         ));
@@ -571,6 +592,10 @@ pub async fn reset_password(
     })?;
 
     remove_reset_token(&username).map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    unlock_user(&username).map_err(|err| {
         ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
     })?;
     // Redirect

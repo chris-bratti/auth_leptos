@@ -1,7 +1,8 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
+use chrono::{DateTime, Utc};
 use diesel::pg::PgConnection;
-use diesel::prelude::*;
+use diesel::{prelude::*, select};
 use dotenvy::dotenv;
 use schema::users::dsl::*;
 use std::env;
@@ -26,6 +27,7 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         email: &user_info.email,
         verified: &false,
         two_factor: &false,
+        locked: &false,
     };
 
     diesel::insert_into(users::table)
@@ -44,6 +46,67 @@ pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::
         .select(DBUser::as_select())
         .first(&mut connection)
         .optional()
+}
+
+pub fn unlock_db_user(uname: &String) -> Result<(), diesel::result::Error> {
+    use schema::users::dsl::*;
+    let mut connection = establish_connection();
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set((locked.eq(false), pass_retries.eq(0)))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)?;
+
+    Ok(())
+}
+
+// Increments password retries and returns if the user is locked or not
+// Should probably move this logic to the db_helper for consistency
+pub fn increment_db_password_tries(uname: &String) -> Result<bool, diesel::result::Error> {
+    use schema::users::dsl::*;
+    let mut connection = establish_connection();
+    let current_time =
+        select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
+
+    let db_user = users
+        .filter(username.eq(uname))
+        .limit(1)
+        .select(DBUser::as_select())
+        .first(&mut connection)?;
+
+    let incremented_password_retries = db_user.pass_retries.unwrap_or(0) + 1;
+
+    if incremented_password_retries >= 5 {
+        let last_attempt = db_user.last_failed_attempt.expect("No timestamp");
+
+        let timestamp: DateTime<Utc> = DateTime::from(last_attempt);
+
+        // Get the current time
+        let current_time_utc: DateTime<Utc> = DateTime::from(current_time);
+
+        // Calculate the difference in minutes
+        let minutes_since_failed = current_time_utc
+            .signed_duration_since(timestamp)
+            .num_minutes();
+
+        if minutes_since_failed < 10 {
+            diesel::update(users.filter(username.eq(uname)))
+                .set(locked.eq(true))
+                .returning(DBUser::as_returning())
+                .get_result(&mut connection)?;
+            return Ok(false);
+        }
+    }
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set((
+            pass_retries.eq(incremented_password_retries),
+            last_failed_attempt.eq(current_time),
+        ))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)?;
+
+    Ok(true)
 }
 
 pub fn add_2fa_for_db_user(

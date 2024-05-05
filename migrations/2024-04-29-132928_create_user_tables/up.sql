@@ -8,7 +8,10 @@ CREATE TABLE users (
     email text NOT NULL,
     verified boolean NOT NULL,
     two_factor boolean NOT NULL,
-    two_factor_token text
+    two_factor_token text,
+    locked boolean NOT NULL,
+    pass_retries integer,
+    last_failed_attempt TIMESTAMP
 );
 
 CREATE TABLE verification_tokens (
