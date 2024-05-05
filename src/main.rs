@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
     println!("listening on http://{}", &addr);
 
     let secret_key = get_secret_key();
-    let redis_connection_string = "redis://localhost:6379";
+    let redis_connection_string = "redis://redis-cache:6379";
     let store = RedisSessionStore::new(redis_connection_string)
         .await
         .unwrap();
