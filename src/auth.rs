@@ -140,14 +140,13 @@ cfg_if! {
     }
 
 fn get_totp_config(username: &String, token: &String) -> TOTP {
-    let url = get_env_variable("AUTH_LEPTOS_URL").expect("AUTH_LEPTOS_URL not set!");
     TOTP::new(
         Algorithm::SHA1,
         6,
         1,
         30,
         Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
-        Some(url),
+        Some("Auth Leptos".to_string()),
         username.to_string(),
     ).unwrap()
 }
