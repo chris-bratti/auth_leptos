@@ -6,6 +6,7 @@
 - Secure password & reset token hashing with Argon2
 - Secure email encryption with AES256-GCM
 - Two factor authentication with Time-Based One Time Passwords (TOTP)
+- Password retry limits - 5 failed attempts in 10 minutes will lock an account
 - User verification through securely generated email links
 - Verification & password reset tokens expire after 20 minutes
 - User-only pages - ensures only logged in and verified users can access certain pages
