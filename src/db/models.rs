@@ -16,6 +16,9 @@ pub struct DBUser {
     pub verified: bool,
     pub two_factor: bool,
     pub two_factor_token: Option<String>,
+    pub locked: bool,
+    pub pass_retries: Option<i32>,
+    pub last_failed_attempt: Option<SystemTime>,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
@@ -64,4 +67,5 @@ pub struct NewDBUser<'a> {
     pub pass_hash: &'a str,
     pub verified: &'a bool,
     pub two_factor: &'a bool,
+    pub locked: &'a bool,
 }

@@ -8,7 +8,8 @@ use super::{
     reset_token_table::{delete_db_reset_token, get_reset_token_from_db, save_reset_token_to_db},
     users_db::{
         add_2fa_for_db_user, create_db_user, delete_db_user, get_user_from_username,
-        set_db_user_as_verified, update_db_password, update_db_username,
+        increment_db_password_tries, set_db_user_as_verified, unlock_db_user, update_db_password,
+        update_db_username,
     },
     verification_tokens_table::{
         delete_db_verification_token, get_verification_token_from_db, save_verification_token_to_db,
@@ -64,6 +65,42 @@ pub fn is_user_verified(username: &String) -> Result<bool, DBError> {
         Some(user) => Ok(user.verified),
         None => Err(DBError::NotFound(username.clone())),
     }
+}
+
+pub fn unlock_user(username: &String) -> Result<(), DBError> {
+    unlock_db_user(username).map_err(|err| DBError::InternalServerError(err))
+}
+
+pub fn is_user_locked(username: &String) -> Result<bool, DBError> {
+    let db_user =
+        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+
+    match db_user {
+        Some(user) => {
+            if user.locked {
+                let timestamp: DateTime<Utc> =
+                    DateTime::from(user.last_failed_attempt.expect("No timestamp!"));
+
+                // Get the current time
+                let current_time = Utc::now();
+
+                // Calculate the difference in minutes
+                let minutes_since_last_attempt =
+                    current_time.signed_duration_since(timestamp).num_minutes();
+
+                if minutes_since_last_attempt > 10 {
+                    unlock_db_user(username).map_err(|err| DBError::InternalServerError(err))?;
+                    return Ok(false);
+                }
+            }
+            Ok(user.locked)
+        }
+        None => Err(DBError::NotFound(username.clone())),
+    }
+}
+
+pub fn failed_login_attempt(username: &String) -> Result<bool, DBError> {
+    increment_db_password_tries(username).map_err(|err| DBError::InternalServerError(err))
 }
 
 pub fn set_user_as_verified(username: &String) -> Result<(), DBError> {

@@ -20,6 +20,9 @@ diesel::table! {
         verified -> Bool,
         two_factor -> Bool,
         two_factor_token -> Nullable<Text>,
+        locked -> Bool,
+        pass_retries -> Nullable<Int4>,
+        last_failed_attempt -> Nullable<Timestamp>,
     }
 }
 
