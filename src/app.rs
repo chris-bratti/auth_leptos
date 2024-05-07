@@ -723,6 +723,7 @@ pub fn UserProfile() -> impl IntoView {
         expect_context::<UserContext>().user_signal;
     let (update_password, set_update_password) = create_signal(false);
     let (enable_two_factor, set_enable_two_factor) = create_signal(false);
+    let logout = create_server_action::<Logout>();
     view! {
         {move || {
             if update_password.get() {
@@ -800,6 +801,7 @@ pub fn UserProfile() -> impl IntoView {
                                 <A class="button" href="/">
                                     "Home"
                                 </A>
+                                <button class="button" on:click=move |_| logout.dispatch(Logout{})>"Logout"</button>
                             </div>
                         </div>
                     </div>
