@@ -730,6 +730,17 @@ pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnE
     Ok(true)
 }
 
+#[server(Logout, "/api")]
+pub async fn logout() -> Result<(), ServerFnError<AuthError>> {
+    let identity: Option<Identity> = extract().await.map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+    println!("Logging out...");
+    Identity::logout(identity.expect("No user found in session!"));
+    leptos_actix::redirect("/");
+    Ok(())
+}
+
 #[cfg(test)]
 mod test_auth {
 
