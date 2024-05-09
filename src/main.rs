@@ -9,7 +9,7 @@ async fn main() -> std::io::Result<()> {
 
     use actix_files::Files;
     use actix_web::*;
-    use auth_leptos::app::*;
+    use auth_leptos::{app::*, server::helpers::get_env_variable};
     use leptos::*;
     use leptos_actix::{generate_route_list, LeptosRoutes};
 
@@ -23,7 +23,8 @@ async fn main() -> std::io::Result<()> {
     println!("listening on http://{}", &addr);
 
     let secret_key = get_secret_key();
-    let redis_connection_string = "redis://redis-cache:6379";
+    let redis_connection_string =
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
     let store = RedisSessionStore::new(redis_connection_string)
         .await
         .unwrap();

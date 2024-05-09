@@ -39,6 +39,7 @@ jobs:
           sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
           sudo service postgresql restart && sleep 3
           echo "DATABASE_URL=postgres://postgres:postgres@localhost/daily" >> $GITHUB_ENV
+          echo "redis://localhost:6379/"
 
       - name: Install diesel
         run: cargo install diesel_cli
