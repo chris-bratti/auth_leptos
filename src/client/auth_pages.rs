@@ -281,7 +281,7 @@ pub fn Verify() -> impl IntoView {
                                     <input
                                         class="btn btn-primary"
                                         type="submit"
-                                        value="Request Password Reset"
+                                        value="Verify Account"
                                     />
                                 </ActionForm>
                             </div>
