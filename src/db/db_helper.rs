@@ -175,7 +175,7 @@ pub fn update_user_password(username: &String, new_pass_hash: &String) -> Result
     Ok(())
 }
 
-pub fn create_user(user_info: UserInfo) -> Result<User, DBError> {
+pub async fn create_user(user_info: UserInfo) -> Result<User, DBError> {
     let db_user = create_db_user(user_info).map_err(|err| DBError::InternalServerError(err))?;
 
     let user = User {
@@ -306,8 +306,8 @@ pub mod test_db_helpers {
 
     use super::create_user;
 
-    #[test]
-    fn test_user_process() {
+    #[tokio::test]
+    async fn test_user_process() {
         let user_info = UserInfo {
             first_name: String::from("foo"),
             last_name: String::from("bar"),
@@ -318,7 +318,9 @@ pub mod test_db_helpers {
 
         // Create
 
-        let created_user = create_user(user_info.clone()).expect("Error getting user");
+        let created_user = create_user(user_info.clone())
+            .await
+            .expect("Error getting user");
 
         assert_eq!(created_user.first_name, user_info.first_name);
         assert_eq!(created_user.last_name, user_info.last_name);

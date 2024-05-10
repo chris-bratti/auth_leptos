@@ -151,18 +151,18 @@ fn get_totp_config(username: &String, token: &String) -> TOTP {
     ).unwrap()
 }
 
-fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError>{
-    let token = generate_token();
+async fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError>{
+    let token = generate_token().await;
     let totp = get_totp_config(&username, &token);
     let qr_code = totp.get_qr_base64().expect("Error generating QR code");
     Ok((qr_code, token))
 }
 
-fn get_totp(username: &String) -> Result<String, AuthError> {
+async fn get_totp(username: &String) -> Result<String, AuthError> {
     let token = get_user_2fa_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token{
         Some(token) =>{
-            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey).expect("Error decrypting string!");
+            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey).await.expect("Error decrypting string!");
             get_totp_config(&username, &decrypted_token).generate_current().map_err(|err| AuthError::InternalServerError(err.to_string()))
         },
         None => Err(AuthError::TOTPError)
@@ -170,7 +170,7 @@ fn get_totp(username: &String) -> Result<String, AuthError> {
 }
 
 /// Hash password with Argon2
-fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
+async fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
 
     let argon2 = Argon2::default();
@@ -205,7 +205,7 @@ fn check_valid_password(password: &String) -> bool{
     valid && password.len() >= 8 && password.len() <= 16
 }
 
-fn generate_token() -> String {
+async fn generate_token() -> String {
     use rand::{thread_rng, Rng};
     use rand::distributions::{Alphanumeric};
 
@@ -231,7 +231,7 @@ fn verify_confirmation_token(username: &String, confirmation_token: &String) -> 
     verify_hash(confirmation_token, &verification_hash).map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidToken))
 }
 
-fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
+async fn send_reset_email(username: &String, reset_token: &String) -> Result<(), ServerFnError> {
 
     // TODO: Two DB calls for one transaction is a little gross - will want to slim this down to one call
 
@@ -241,14 +241,14 @@ fn send_reset_email(username: &String, reset_token: &String) -> Result<(), Serve
 
     let name = user.expect("No user present!").first_name;
 
-    let user_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey).map_err(|_| ServerFnError::new("Error decrypting email"))?;
+    let user_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey).await.map_err(|_| ServerFnError::new("Error decrypting email"))?;
 
-    smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name);
+    smtp::send_email(&user_email, "Reset Password".to_string(), generate_reset_email_body(reset_token, &name), &name).await;
 
     Ok(())
 }
 
-fn encrypt_string(data: &String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
+async fn encrypt_string(data: &String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
 
     let encryption_key = encryption_key.get();
 
@@ -268,7 +268,7 @@ fn encrypt_string(data: &String, encryption_key: EncryptionKey) -> Result<String
     Ok(output)
 }
 
-fn decrypt_string(encrypted: String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
+async fn decrypt_string(encrypted: String, encryption_key: EncryptionKey) -> Result<String, aes_gcm::Error> {
 
     let encryption_key = encryption_key.get();
 
@@ -449,30 +449,30 @@ pub async fn signup(
     // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
 
     // Hash password
-    let pass_hash = hash_string(password).expect("Error hashing password");
+    let pass_hash = hash_string(password);
 
-    let encrypted_email =
-        encrypt_string(&email, EncryptionKey::SmtpKey).expect("Error encrypting email");
+    let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey);
 
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name: first_name.clone(),
         last_name,
-        pass_hash,
-        email: encrypted_email,
+        pass_hash: pass_hash.await.expect("Error hashing password"),
+        email: encrypted_email.await.expect("Error encrypting email"),
     };
 
     // Creates DB user
-    let user = create_user(user_info).map_err(|err| {
+    let user = create_user(user_info);
+    // Generate random 32 bit verification token path
+    let generated_token = generate_token().await;
+
+    // Hash token
+    let verification_token = hash_string(generated_token.clone()).await.map_err(|err| {
         ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
     })?;
 
-    // Generate random 32 bit reset token path
-    let generated_token = generate_token();
-
-    // Hash token
-    let verification_token = hash_string(generated_token.clone()).map_err(|err| {
+    let user = user.await.map_err(|err| {
         ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
     })?;
 
@@ -482,7 +482,7 @@ pub async fn signup(
     })?;
 
     // Send welcome email
-    smtp::send_email(
+    let email_sent = smtp::send_email(
         &email,
         "Welcome!".to_string(),
         generate_welcome_email_body(&first_name, &generated_token),
@@ -497,6 +497,8 @@ pub async fn signup(
     };
     println!("Saving user to session: {}", user.username);
     Identity::login(&req.extensions(), user.username.into()).unwrap();
+
+    email_sent.await;
 
     leptos_actix::redirect("/user");
 
@@ -540,7 +542,9 @@ pub async fn change_password(
     }
 
     // Hash new password
-    let pass_hash = hash_string(new_password).expect("Error hashing password");
+    let pass_hash = hash_string(new_password)
+        .await
+        .expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash).map_err(|err| {
@@ -584,7 +588,9 @@ pub async fn reset_password(
     }
 
     // Hash new password
-    let pass_hash = hash_string(new_password).expect("Error hashing password");
+    let pass_hash = hash_string(new_password)
+        .await
+        .expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash).map_err(|err| {
@@ -620,10 +626,11 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
     leptos_actix::redirect("/");
 
     // Generate random 32 bit reset token path
-    let generated_token = generate_token();
+    let generated_token = generate_token().await;
 
     // Hash token
     let reset_token = hash_string(generated_token.clone())
+        .await
         .map_err(|_| ServerFnError::new("Internal server error"))?;
 
     // Save token hash to DB
@@ -631,7 +638,9 @@ pub async fn request_password_reset(username: String) -> Result<(), ServerFnErro
         .map_err(|_| ServerFnError::new("Internal server error"))?;
 
     // SMTP send email
-    send_reset_email(&username, &generated_token).expect("Error sending email");
+    send_reset_email(&username, &generated_token)
+        .await
+        .expect("Error sending email");
 
     Ok(())
 }
@@ -673,8 +682,9 @@ pub async fn check_user_verification(username: String) -> Result<bool, ServerFnE
 
 #[server(Generate2FA, "/api")]
 pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFnError<AuthError>> {
-    let (qr_code, token) =
-        create_2fa_for_user(username).map_err(|err| ServerFnError::WrappedServerError(err))?;
+    let (qr_code, token) = create_2fa_for_user(username)
+        .await
+        .map_err(|err| ServerFnError::WrappedServerError(err))?;
     Ok((qr_code, token))
 }
 
@@ -693,6 +703,7 @@ pub async fn enable_2fa(
     }
 
     let encrypted_token = encrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
+        .await
         .expect("Error encrypting token");
     enable_2fa_for_user(&username, &encrypted_token).map_err(|err| {
         ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
@@ -706,6 +717,7 @@ pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnE
     println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
     let totp = get_totp(&username)
+        .await
         .expect("Error validating token")
         .trim()
         .to_string();
@@ -748,11 +760,11 @@ mod test_auth {
 
     use super::{encrypt_string, get_totp_config, hash_string};
 
-    #[test]
-    fn test_password_hashing() {
+    #[tokio::test]
+    async fn test_password_hashing() {
         let password = "whatALovelyL!ttleP@s$w0rd".to_string();
 
-        let hashed_password = hash_string(password.clone());
+        let hashed_password = hash_string(password.clone()).await;
 
         assert!(hashed_password.is_ok());
 
@@ -767,15 +779,17 @@ mod test_auth {
         assert_eq!(pass_match.unwrap(), true);
     }
 
-    #[test]
-    fn test_email_encryption() {
+    #[tokio::test]
+    async fn test_email_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email =
-            encrypt_string(&email, EncryptionKey::SmtpKey).expect("There was an error encrypting");
+        let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey)
+            .await
+            .expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
         let decrypted_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+            .await
             .expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);

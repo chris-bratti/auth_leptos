@@ -38,7 +38,13 @@
 
 ## Dockerized!
 
-This project can be run in a docker container. Checkout the docker-compose.yml file! You will need to supply a few secrets in an `.env` file, here is a good example:
+This project can be run in a docker container.
+The `docker-compose.yml` file can be downloaded by running:
+
+```
+wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/docker-compose.yml
+```
+You will need to supply a few secrets in an `.env` file, here is a good example:
 ```
 FROM_EMAIL=noreply.example@gmail.com
 

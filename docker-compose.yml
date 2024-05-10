@@ -17,6 +17,7 @@ services:
       SMTP_ENCRYPTION_KEY: "${SMTP_ENCRYPTION_KEY}"
       AUTH_LEPTOS_URL: ${AUTH_LEPTOS_URL}
       PGPASSWORD: ${MASTER_PASS}
+      REDIS_CONNECTION_STRING: "redis://redis-cache:6379"
     restart: unless-stopped
     depends_on:
       redis:

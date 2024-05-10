@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 pub mod app;
+pub use app::*;
 pub mod auth;
+pub mod client;
+pub use client::*;
 #[cfg(feature = "ssr")]
 pub mod db;
 #[cfg(feature = "ssr")]
