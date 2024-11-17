@@ -40,7 +40,7 @@ services:
       retries: 30
 
   db:
-    image: postgres
+    image: postgres:16
     container_name: leptos_postgres
     networks:
       - leptos_network
