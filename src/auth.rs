@@ -674,6 +674,7 @@ pub async fn verify_user(
 
 #[server(IsUserVerified, "/api")]
 pub async fn check_user_verification(username: String) -> Result<bool, ServerFnError> {
+    println!("Checking user verification for {}", username);
     let verified = is_user_verified(&username)
         .map_err(|err| ServerFnError::new(format!("Error verifying user: {}", err.to_string())))?;
 

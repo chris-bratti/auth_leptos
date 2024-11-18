@@ -80,8 +80,9 @@ fn HomePage() -> impl IntoView {
 
 #[component]
 pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
-    let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
-    let verification_result = create_resource(
+    let user_result =
+        create_blocking_resource(|| (), |_| async move { get_user_from_session().await });
+    let verification_result = create_blocking_resource(
         move || user_result(),
         |user| async move {
             match user {
