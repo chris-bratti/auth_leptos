@@ -33,26 +33,7 @@ The recommended `docker-compose.yml` file can be downloaded by running:
 ```
 $ wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/docker-compose.yml
 ```
-You will need to supply a few secrets in an `.env` file, here is a good example:
-```
-FROM_EMAIL=noreply.example@gmail.com
-
-SMTP_KEY="secret key here"
-
-TWO_FACTOR_KEY="supersecretandsecureencryptionkey"
-
-SMTP_ENCRYPTION_KEY="anothersecureandverysecretencryptionkey"
-
-LOG_KEY="securekeyforencryptedlogging"
-
-MASTER_USER=master
-
-MASTER_PASS=verysecretpassword
-
-AUTH_LEPTOS_URL=https://amazingsite.com
-```
-
-You can download this example `.env` file by running:
+You will need to supply a few secrets in an `.env` file. I've included a template in this repo, `example.env`. You can download it by running:
 
 ```
 $ wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/example.env
@@ -60,17 +41,28 @@ $ wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/example.e
 $ mv example.env .env
 ```
 
-And then update the values for your app:
+And then updating the values for your app:
 
 - `FROM_EMAIL`: SMTP address for sending emails to users
 - `SMTP_KEY`: Password for SMTP account
-- `TWO_FACTOR_KEY`: Encryption key for encrypting user TOTP keys
-- `SMTP_ENCRYPTION_KEY`: Encryption key for encrypting user emails
-- `LOG_KEY`: Encryption key for encrypting sensitive data in the application logs
+- `TWO_FACTOR_KEY`: 32 character encryption key for encrypting user TOTP keys
+- `SMTP_ENCRYPTION_KEY`: 32 character encryption key for encrypting user emails
+- `LOG_KEY`: 32 character encryption key for encrypting sensitive data in the application logs
 - `MASTER_USER`: Master username for postgres DB
 - `MASTER_PASSWORD`: Master password for postgres DB
-- `AUTH_LEPTOS_URL`: URL for your application, used in password reset and user verification links that are emailed to users. Set this to `http://localhost:3000` for local testing.
+- `AUTH_LEPTOS_URL`: Base URL for your application, used in password reset and user verification links that are emailed to users. Set this to `http://localhost:3000` for local testing.
 
+As noted above, **all encryption keys need to be 32 characters long**. Generate these strings with whatever method you'd like, ex:
+
+```
+$ cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1
+```
+
+After running `docker-compose up -d`, you should have the following containers:
+
+1. `leptos-auth` - The container for the Leptos application
+2. `leptos_postgres` - The postgres container for your database
+3. `redis-cache` - The Redis cache for session storage
 
 ## Forking and Contributions
 
