@@ -60,7 +60,7 @@ $ cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1
 
 After running `docker-compose up -d`, you should have the following containers:
 
-1. `auth_leptos` - The container for the Leptos application
+1. `leptos-auth` - The container for the Leptos application
 2. `leptos_postgres` - The postgres container for your database
 3. `redis-cache` - The Redis cache for session storage
 
