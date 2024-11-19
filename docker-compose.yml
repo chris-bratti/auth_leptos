@@ -10,7 +10,7 @@ services:
     ports:
       - 3000:3000
     environment:
-      DATABASE_URL: postgres://${MASTER_USER}:${MASTER_PASS}@leptos_postgres/daily
+      DATABASE_URL: postgres://${MASTER_USER}:${MASTER_PASS}@leptos_postgres/${DATABASE_NAME}
       FROM_EMAIL: ${FROM_EMAIL}
       SMTP_KEY: "${SMTP_KEY}"
       TWO_FACTOR_KEY: "${TWO_FACTOR_KEY}"
