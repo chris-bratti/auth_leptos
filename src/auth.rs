@@ -769,6 +769,8 @@ pub async fn logout() -> Result<(), ServerFnError<AuthError>> {
 #[cfg(test)]
 mod test_auth {
 
+    use core::{assert_eq, assert_ne};
+
     use crate::auth::{check_valid_password, decrypt_string, verify_hash, EncryptionKey};
 
     use super::{encrypt_string, get_totp_config, hash_string};
@@ -806,6 +808,22 @@ mod test_auth {
             .expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
+    }
+
+    #[tokio::test]
+    async fn test_log_encryption() {
+        let username = String::from("testuser123");
+        let encrypted_username = encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("There was an error encrypting!");
+
+        assert_ne!(encrypted_username, username);
+
+        let decrypted_username = decrypt_string(encrypted_username, EncryptionKey::LoggerKey)
+            .await
+            .expect("There was an error decrypting!");
+
+        assert_eq!(username, decrypted_username);
     }
 
     #[test]

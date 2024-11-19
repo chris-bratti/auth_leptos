@@ -64,6 +64,63 @@ After running `docker-compose up -d`, you should have the following containers:
 2. `leptos_postgres` - The postgres container for your database
 3. `redis-cache` - The Redis cache for session storage
 
+## Running locally
+
+Running the project locally will require installing Rust and some other dependencies
+
+Prerequisites: 
+- A running postgres instance - check the `docker-compose.yaml` for an example for running in Docker
+- A database and configured schema - check the `init-db.sh` and `init.sql` for the commands to create the expected schema
+- A running Redis instance - also available in the `docker-compose.yaml` file
+
+Setup instructions:
+
+1. Clone the repo and edit the `.env` file:
+```
+$ git clone https://github.com/chris-bratti/auth_leptos.git
+
+$ cd auth_leptos
+
+$ cp example.env .env
+
+$ nano .env
+```
+
+Check the `Dockerized!` section for more info on the `.env` file. Make sure to uncomment the `DATABASE_URL` var for local testing
+
+2. Install rust (if you haven't already):
+
+```
+$ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+3. Update project to use the nightly build of Rust:
+
+```
+$ rustup toolchain install nightly
+
+$ rustup override set nightly
+```
+
+4. Install the `cargo-leptos` library:
+```
+$ cargo install cargo-leptos
+```
+
+5. Add the wasm32-unknown-unknown target:
+```
+$ rustup target add wasm32-unknown-unknown
+```
+
+6. Build & run the project!
+```
+$ cargo leptos watch
+```
+
+The application should be running on port `3000`
+
+For more information on installing and running a Leptos project, checkout their [documentation](https://book.leptos.dev/01_introduction.html).
+
 ## Forking and Contributions
 
 The purpose of `auth_leptos` is to serve as a polished(ish) template for full stack Rust applications with simple yet secure user authentication. 
