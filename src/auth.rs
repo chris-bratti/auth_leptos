@@ -126,6 +126,7 @@ cfg_if! {
     enum EncryptionKey {
         SmtpKey,
         TwoFactorKey,
+        LoggerKey,
     }
 
     impl EncryptionKey {
@@ -133,6 +134,7 @@ cfg_if! {
             let key = match self {
                 EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
                 EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
+                EncryptionKey::LoggerKey => "LOG_KEY"
             };
 
             get_env_variable(key).expect("Encryption key is unset!")
@@ -324,7 +326,12 @@ async fn login(
     username: String,
     password: String,
 ) -> Result<Option<(bool, String)>, ServerFnError<AuthError>> {
-    println!("Logging in");
+    let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
+        .await
+        .expect("Error encrypting username");
+
+    println!("Logging in user: {}", encrypted_username);
+
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
 
@@ -446,6 +453,13 @@ pub async fn signup(
         }
     }
 
+    println!(
+        "Signing up user: {}",
+        encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("Error encrypting username")
+    );
+
     // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
 
     // Hash password
@@ -540,6 +554,13 @@ pub async fn change_password(
             AuthError::InvalidPassword,
         ));
     }
+
+    println!(
+        "Changing password for user: {}",
+        encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("Error encrypting username")
+    );
 
     // Hash new password
     let pass_hash = hash_string(new_password)
