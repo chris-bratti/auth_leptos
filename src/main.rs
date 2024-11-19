@@ -14,7 +14,7 @@ async fn main() -> std::io::Result<()> {
     use leptos_actix::{generate_route_list, LeptosRoutes};
 
     use actix_identity::IdentityMiddleware;
-    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
 
     let conf = get_configuration(None).await.unwrap();
     let addr = conf.leptos_options.site_addr;
@@ -47,8 +47,15 @@ async fn main() -> std::io::Result<()> {
                     .login_deadline(Some(Duration::new(259200, 0)))
                     .build(),
             )
-            .wrap(SessionMiddleware::new(store.clone(), secret_key.clone()))
-        //.wrap(middleware::Compress::default())
+            .wrap(
+                SessionMiddleware::builder(store.clone(), secret_key.clone())
+                    .cookie_secure(false)
+                    .session_lifecycle(
+                        PersistentSession::default()
+                            .session_ttl(actix_web::cookie::time::Duration::weeks(2)),
+                    )
+                    .build(),
+            )
     })
     .bind(&addr)?
     .run()
