@@ -672,14 +672,6 @@ pub async fn verify_user(
     Ok(())
 }
 
-#[server(IsUserVerified, "/api")]
-pub async fn check_user_verification(username: String) -> Result<bool, ServerFnError> {
-    let verified = is_user_verified(&username)
-        .map_err(|err| ServerFnError::new(format!("Error verifying user: {}", err.to_string())))?;
-
-    Ok(verified)
-}
-
 #[server(Generate2FA, "/api")]
 pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFnError<AuthError>> {
     let (qr_code, token) = create_2fa_for_user(username)

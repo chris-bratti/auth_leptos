@@ -499,7 +499,10 @@ pub fn Auth() -> impl IntoView {
                             {move || {
                                 match _verify_otp_value.get() {
                                     Some(response) => {
-                                        view! { <p>{format!("{:#?}", response)}</p> }.into_view()
+                                        match response{
+                                            Ok(_) => view! {}.into_view(),
+                                            Err(err) => view! { <p>{format!("{}", err)}</p> }.into_view()
+                                        }
                                     }
                                     None => view! {}.into_view(),
                                 }

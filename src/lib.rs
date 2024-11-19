@@ -28,4 +28,5 @@ pub struct User {
     last_name: String,
     username: String,
     two_factor: bool,
+    verified: bool,
 }

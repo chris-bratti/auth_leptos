@@ -80,28 +80,16 @@ fn HomePage() -> impl IntoView {
 
 #[component]
 pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
-    let user_result = create_resource(|| (), |_| async move { get_user_from_session().await });
-    let verification_result = create_resource(
-        move || user_result(),
-        |user| async move {
-            match user {
-                Some(user_result) => match user_result {
-                    Ok(valid_user) => check_user_verification(valid_user.username).await,
-                    Err(err) => Err(err),
-                },
-                None => Ok(false),
-            }
-        },
-    );
+    let user_result =
+        create_blocking_resource(|| (), |_| async move { get_user_from_session().await });
     let children = store_value(children);
     let user_is_logged_in =
         move || user_result.get().is_some() && user_result.get().unwrap().is_ok();
+    let user_is_verified = move || user_result.get().unwrap().unwrap().verified;
     let logged_in_fallback = || view! { <NotLoggedIn/> };
     let verified_fallback = || {
         view! { <NotVerified/> }
     };
-    let user_is_verified =
-        move || verification_result.get().is_some() && verification_result.get().unwrap().unwrap();
     view! {
         <Suspense fallback=|| {
             view! { <h1>Loading....</h1> }

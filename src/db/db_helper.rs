@@ -57,16 +57,6 @@ pub fn user_has_2fa_enabled(username: &String) -> Result<bool, DBError> {
     }
 }
 
-pub fn is_user_verified(username: &String) -> Result<bool, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
-
-    match db_user {
-        Some(user) => Ok(user.verified),
-        None => Err(DBError::NotFound(username.clone())),
-    }
-}
-
 pub fn unlock_user(username: &String) -> Result<(), DBError> {
     unlock_db_user(username).map_err(|err| DBError::InternalServerError(err))
 }
@@ -183,6 +173,7 @@ pub async fn create_user(user_info: UserInfo) -> Result<User, DBError> {
         last_name: db_user.last_name,
         username: db_user.username,
         two_factor: false,
+        verified: false,
     };
 
     Ok(user)
@@ -199,6 +190,7 @@ pub fn find_user_by_username(username: &String) -> Result<Option<User>, DBError>
                 last_name: db_user.last_name,
                 username: db_user.username,
                 two_factor: db_user.two_factor,
+                verified: db_user.verified,
             };
             Ok(Some(user))
         }
@@ -297,6 +289,8 @@ impl fmt::Debug for DBError {
 
 #[cfg(test)]
 pub mod test_db_helpers {
+    use core::assert_eq;
+
     use crate::{
         auth::UserInfo,
         db::db_helper::{
@@ -325,6 +319,7 @@ pub mod test_db_helpers {
         assert_eq!(created_user.first_name, user_info.first_name);
         assert_eq!(created_user.last_name, user_info.last_name);
         assert_eq!(created_user.username, user_info.username);
+        assert_eq!(created_user.verified, false);
 
         // Test if user exists
         let user_exists =
