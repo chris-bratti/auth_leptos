@@ -35,6 +35,8 @@ aes-gcm = "0.10.3"
 hex = "0.4.3"
 totp-rs = { version = "5.6.0", features = ["qr"], optional = true }
 tokio = { version = "1.41.1", features = ["full"], optional = true }
+env_logger = {version = "0.11.5", optional = true}
+log = {version = "0.4.22", optional = true}
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]
@@ -55,7 +57,9 @@ ssr = [
   "dep:lettre",
   "dep:maud",
   "dep:totp-rs",
-  "dep:tokio"
+  "dep:tokio",
+  "dep:log",
+  "dep:env_logger"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]

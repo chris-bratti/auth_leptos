@@ -2,8 +2,10 @@
 use actix_web::cookie::Key;
 
 #[cfg(feature = "ssr")]
-#[actix_web::main]
+use env_logger::{Env, Logger};
 
+#[cfg(feature = "ssr")]
+#[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use std::time::Duration;
 
@@ -15,6 +17,8 @@ async fn main() -> std::io::Result<()> {
 
     use actix_identity::IdentityMiddleware;
     use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
+
+    env_logger::init();
 
     let conf = get_configuration(None).await.unwrap();
     let addr = conf.leptos_options.site_addr;

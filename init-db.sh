@@ -1,6 +1,6 @@
 #!/bin/sh
 # Creates database if it doesn't already exist
-echo "Creating databse ${DATABASE_NAME}"
+echo "Creating database ${DATABASE_NAME}"
 if psql -h leptos_postgres -U master -tc "SELECT 1 FROM pg_database WHERE datname = '${DATABASE_NAME}'" | grep -q 1; then
     echo "Database already exists"
 else

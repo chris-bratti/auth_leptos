@@ -32,6 +32,9 @@ use leptos_actix::extract;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[cfg(feature = "ssr")]
+use log::{error, info, trace, warn};
+
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
     InvalidCredentials,
@@ -326,6 +329,9 @@ async fn login(
     username: String,
     password: String,
 ) -> Result<Option<(bool, String)>, ServerFnError<AuthError>> {
+    info!("Here is some info!");
+    warn!("Here is a warning");
+    error!("Here is an error");
     let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
         .await
         .expect("Error encrypting username");
@@ -338,7 +344,7 @@ async fn login(
     if is_user_locked(&username)
         .map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidCredentials))?
     {
-        println!("User is locked");
+        println!("Locked user attempt: {}", &encrypted_username);
         return Err(ServerFnError::WrappedServerError(AuthError::AccountLocked));
     }
 
@@ -350,6 +356,7 @@ async fn login(
     let verified_result = verify_hash(&password, &pass_result?);
 
     if verified_result.is_err() || !verified_result.unwrap() {
+        println!("Invalid password attempt for user: {}", &encrypted_username);
         let user_not_locked =
             failed_login_attempt(&username).expect("Error marking login attempt as failed");
 
@@ -509,7 +516,12 @@ pub async fn signup(
             AuthError::InternalServerError("Unable to find HttpRequest in context".to_string()),
         ));
     };
-    println!("Saving user to session: {}", user.username);
+    println!(
+        "Saving user to session: {}",
+        encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("Error encrypting username")
+    );
     Identity::login(&req.extensions(), user.username.into()).unwrap();
 
     email_sent.await;
