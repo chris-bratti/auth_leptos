@@ -1,4 +1,4 @@
-use std::{env, fmt, str::FromStr};
+use std::{env, str::FromStr};
 
 #[cfg(feature = "ssr")]
 use actix_identity::Identity;
@@ -25,88 +25,14 @@ use crate::db::db_helper::*;
 use crate::server::helpers::get_env_variable;
 #[cfg(feature = "ssr")]
 use crate::smtp::{self, generate_reset_email_body, generate_welcome_email_body};
+use crate::AuthError;
 #[cfg(feature = "ssr")]
-use actix_session::Session;
+use crate::UserInfo;
 #[cfg(feature = "ssr")]
 use leptos_actix::extract;
-use serde::Deserialize;
-use serde::Serialize;
 
-#[derive(Clone, Serialize, Deserialize)]
-pub enum AuthError {
-    InvalidCredentials,
-    InternalServerError(String),
-    InvalidToken,
-    PasswordConfirmationError,
-    InvalidPassword,
-    Error(String),
-    TOTPError,
-    AccountLocked,
-}
-
-// Implement std::fmt::Display for AppError
-impl fmt::Display for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AuthError::InvalidCredentials => {
-                write!(f, "Invalid username or password")
-            }
-            AuthError::InternalServerError(_error) => {
-                write!(f, "There was an error on our side :(")
-            }
-            AuthError::InvalidToken => {
-                write!(f, "Token invalid or expired")
-            }
-            AuthError::Error(msg) => {
-                write!(f, "{msg}")
-            }
-            AuthError::PasswordConfirmationError => {
-                write!(f, "Passwords do not match!")
-            }
-            AuthError::InvalidPassword => {
-                write!(f, "Password does not meet minimum requirements!")
-            }
-            AuthError::TOTPError => {
-                write!(f, "Error validating one time password!")
-            }
-            AuthError::AccountLocked => {
-                write!(f, "Your account has been locked due to invalid attempts. Please try again later or reset your password")
-            }
-        }
-    }
-}
-
-// Implement std::fmt::Debug for AppError
-impl fmt::Debug for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AuthError::InvalidCredentials => {
-                write!(f, "Invalid login attempt")
-            }
-            AuthError::InternalServerError(error) => {
-                write!(f, "Internal error: {}", error)
-            }
-            AuthError::InvalidToken => {
-                write!(f, "Invalid token attempt")
-            }
-            AuthError::Error(msg) => {
-                write!(f, "{msg}")
-            }
-            AuthError::PasswordConfirmationError => {
-                write!(f, "Passwords do not match!")
-            }
-            AuthError::InvalidPassword => {
-                write!(f, "Password does not meet minimum requirements!")
-            }
-            AuthError::TOTPError => {
-                write!(f, "Invalid TOTP attempt")
-            }
-            AuthError::AccountLocked => {
-                write!(f, "Account locked")
-            }
-        }
-    }
-}
+#[cfg(feature = "ssr")]
+use log::{error, info, warn};
 
 impl FromStr for AuthError {
     type Err = AuthError;
@@ -294,32 +220,6 @@ async fn decrypt_string(encrypted: String, encryption_key: EncryptionKey) -> Res
     }
 }
 
-#[cfg(feature = "ssr")]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UserInfo {
-    pub username: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: String,
-    pub pass_hash: String,
-}
-
-#[server]
-pub async fn get_session() -> Result<String, ServerFnError> {
-    let session: Session = extract().await?;
-
-    if let Some(count) = session.get::<i32>("counter")? {
-        // modify the session state
-        session.insert("counter", count + 1)?;
-        println!("SESSION value: {}", count + 1);
-    } else {
-        println!("Starting session with count 1");
-        session.insert("counter", 1)?;
-    }
-
-    Ok(String::from("Goat"))
-}
-
 /// Server function to log in user
 #[server(Login, "/api")]
 async fn login(
@@ -330,7 +230,7 @@ async fn login(
         .await
         .expect("Error encrypting username");
 
-    println!("Logging in user: {}", encrypted_username);
+    info!("Logging in user: {}", encrypted_username);
 
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
@@ -338,7 +238,7 @@ async fn login(
     if is_user_locked(&username)
         .map_err(|_| ServerFnError::WrappedServerError(AuthError::InvalidCredentials))?
     {
-        println!("User is locked");
+        warn!("Locked user attempt: {}", &encrypted_username);
         return Err(ServerFnError::WrappedServerError(AuthError::AccountLocked));
     }
 
@@ -350,6 +250,7 @@ async fn login(
     let verified_result = verify_hash(&password, &pass_result?);
 
     if verified_result.is_err() || !verified_result.unwrap() {
+        warn!("Invalid password attempt for user: {}", &encrypted_username);
         let user_not_locked =
             failed_login_attempt(&username).expect("Error marking login attempt as failed");
 
@@ -365,7 +266,7 @@ async fn login(
         ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
     })?;
 
-    println!("User OTP: {}", two_factor);
+    info!("User OTP: {}", two_factor);
 
     if two_factor {
         return Ok(Some((true, username)));
@@ -405,7 +306,7 @@ pub async fn get_user_from_session() -> Result<crate::User, ServerFnError> {
             Err(_err) => Err(ServerFnError::new("Internal server error")),
         }
     } else {
-        println!("No user found");
+        error!("No user found");
         Err(ServerFnError::new("No user found"))
     }
 }
@@ -453,12 +354,11 @@ pub async fn signup(
         }
     }
 
-    println!(
-        "Signing up user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
-    );
+    let encrypted_username = encrypt_string(&username, EncryptionKey::LoggerKey)
+        .await
+        .expect("Error encrypting username");
+
+    info!("Signing up user: {}", &encrypted_username);
 
     // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
 
@@ -509,7 +409,7 @@ pub async fn signup(
             AuthError::InternalServerError("Unable to find HttpRequest in context".to_string()),
         ));
     };
-    println!("Saving user to session: {}", user.username);
+    info!("Saving user to session: {}", &encrypted_username);
     Identity::login(&req.extensions(), user.username.into()).unwrap();
 
     email_sent.await;
@@ -555,7 +455,7 @@ pub async fn change_password(
         ));
     }
 
-    println!(
+    info!(
         "Changing password for user: {}",
         encrypt_string(&username, EncryptionKey::LoggerKey)
             .await
@@ -585,7 +485,12 @@ pub async fn reset_password(
     new_password: String,
     confirm_password: String,
 ) -> Result<(), ServerFnError<AuthError>> {
-    println!("Requesting to reset password");
+    info!(
+        "Requesting to reset password for user {}",
+        encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("Error encrypting username")
+    );
     // Verify reset token
     let token_verification = verify_reset_token(&username, &reset_token)?;
 
@@ -671,7 +576,12 @@ pub async fn verify_user(
     username: String,
     verification_token: String,
 ) -> Result<(), ServerFnError<AuthError>> {
-    println!("Attempting to verify user");
+    info!(
+        "Attempting to verify user {}",
+        encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("Error encrypting username")
+    );
     // Verify reset token
     let token_verification = verify_confirmation_token(&username, &verification_token)?;
 
@@ -727,7 +637,12 @@ pub async fn enable_2fa(
 
 #[server(VerifyOTP, "/api")]
 pub async fn verify_otp(otp: String, username: String) -> Result<bool, ServerFnError<AuthError>> {
-    println!("Verifying OTP for {}", username);
+    info!(
+        "Verifying OTP for {}",
+        encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("Error encrypting username")
+    );
     let otp = otp.trim().to_string();
     let totp = get_totp(&username)
         .await
@@ -760,7 +675,7 @@ pub async fn logout() -> Result<(), ServerFnError<AuthError>> {
     let identity: Option<Identity> = extract().await.map_err(|err| {
         ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
     })?;
-    println!("Logging out...");
+    info!("Logging out...");
     Identity::logout(identity.expect("No user found in session!"));
     leptos_actix::redirect("/");
     Ok(())
