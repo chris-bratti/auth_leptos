@@ -1,6 +1,8 @@
 # Leptos Auth
 ## A full stack user authentication application written in pure Rust
 
+# Hey there! I've moved this project to [auth-leptos](https://github.com/chris-bratti/auth-server) - an OAuth server with updated functionality, performance, and security
+
 ## Features:
 ### Security
 - Secure password & reset token hashing with Argon2
